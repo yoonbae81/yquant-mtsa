@@ -1,0 +1,32 @@
+{
+  "screen_name": "7201_balance",
+  "version": "1.0",
+  "rules": [
+    {
+      "label": "종목명",
+      "target_text": "RISE 삼성전자SK하이닉스채권혼합50",
+      "resource_id": "",
+      "extraction_method": "text",
+      "position_offset": 0,
+      "regex_pattern": ".*"
+    },
+    {
+      "label": "매도가능",
+      "target_text": "100",
+      "resource_id": "",
+      "extraction_method": "text",
+      "position_offset": 1,
+      "regex_pattern": "\\d+"
+    },
+    {
+      "label": "매입단가",
+      "target_text": "10,005",
+      "resource_id": "",
+      "extraction_method": "text",
+      "position_offset": 0,
+      "regex_pattern": "[\\d,]+"
+    }
+  ],
+  "generated_at": "2024-04-26T00:00:00Z",
+  "note": "Based on actual user-provided data"
+}

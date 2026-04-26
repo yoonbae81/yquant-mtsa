@@ -1,0 +1,23 @@
+{
+  "screen_name": "7201_balance",
+  "version": "1.0",
+  "account_dropdown": {
+    "selector_text": "64923286",
+    "extraction_method": "text",
+    "click_target": "dropdown_button"
+  },
+  "account_list": [
+    {
+      "account_name": "개인형IRP, 조윤배",
+      "account_prefix": "64923286",
+      "account_type": "IRP"
+    },
+    {
+      "account_name": "한국전력공사 DC",
+      "account_prefix": "64664736",
+      "account_type": "DC"
+    }
+  ],
+  "generated_at": "2024-04-26T00:00:00Z",
+  "note": "Account switching rules for 7201 balance screen"
+}

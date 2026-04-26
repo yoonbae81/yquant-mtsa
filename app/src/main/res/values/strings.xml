@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MTSA Prototype</string>
+    <string name="accessibility_service_description">MTS 앱 자동화를 위한 접근성 서비스</string>
+</resources>
