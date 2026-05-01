@@ -16,7 +16,7 @@ Windows에서 ADB 서버를 시작하고 WSL에서 접속할 수 있게 해주�
 **사용법**:
 1. Windows에서 스크립트 실행 (안드로이드 폰이 USB로 연결된 상태)
 2. 표시된 Windows IP 주소 확인
-3. WSL에서 `./scripts/connect_adb_wsl.sh WINDOWS_IP` 실행 시 해당 IP 사용
+3. 개발 중에는 먼저 `scripts\connect_adb_windows.bat`를 실행한 뒤, 이어서 WSL에서 `./scripts/connect_adb_wsl.sh WINDOWS_IP`를 순서대로 실행
 
 ```cmd
 scripts\connect_adb_windows.bat
@@ -48,8 +48,8 @@ WSL에서 Windows ADB 서버에 접속하는 스크립트입니다.
 ```
 
 **작동 방식**:
-1. Windows에서 `connect_adb_windows.bat` 실행
-2. WSL에서 이 스크립트를 실행하여 `ADB_SERVER_SOCKET=tcp:WINDOWS_IP:5037` 설정
+1. 개발 중에는 먼저 Windows에서 `connect_adb_windows.bat` 실행
+2. 그 다음 WSL에서 이 스크립트를 실행하여 `ADB_SERVER_SOCKET=tcp:WINDOWS_IP:5037` 설정
 3. WSL의 `adb` 클라이언트가 Windows ADB 서버(포트 5037)를 사용
 4. 이 흐름은 adb-over-WiFi가 아니므로 기본적으로 `adb tcpip 5555`를 실행하지 않음
 
@@ -150,6 +150,11 @@ adb devices
 이 워크플로우는 WSL의 adb 클라이언트를 Windows의 adb 서버(포트 5037)에 연결하는 방식이며, Android 기기에 직접 TCP 5555로 붙는 adb-over-WiFi 흐름이 아닙니다.
 
 ### 설정 순서
+
+개발 단계에서는 아래 두 스크립트를 항상 순서대로 실행합니다.
+
+1. `connect_adb_windows.bat`
+2. `connect_adb_wsl.sh`
 
 1. **Windows에서 ADB 서버 시작**
    ```cmd

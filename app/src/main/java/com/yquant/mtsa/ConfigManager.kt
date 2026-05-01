@@ -22,6 +22,11 @@ data class ScreenConfig(
     val rules: List<ExtractionRule>
 )
 
+data class LoginCertConfig(
+    val name: String,
+    val password: String
+)
+
 class ConfigManager(private val context: Context) {
 
     companion object {
@@ -29,6 +34,62 @@ class ConfigManager(private val context: Context) {
         private const val CONFIG_FILE = "balance_extraction_rules.json"
         private const val PREFS_NAME = "mtsa_config"
         private const val RULES_KEY = "extraction_rules"
+        private const val LOGIN_CONFIG_FILE = "config.yaml"
+
+        fun parseLoginCertConfig(content: String): LoginCertConfig? {
+            var inLoginSection = false
+            var inCertSection = false
+            var certName: String? = null
+            var certPassword: String? = null
+
+            content.lineSequence().forEach { rawLine ->
+                val withoutComment = rawLine.substringBefore("#")
+                val trimmed = withoutComment.trimEnd()
+                if (trimmed.isBlank()) {
+                    return@forEach
+                }
+
+                val indent = withoutComment.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
+                val line = trimmed.trimStart()
+
+                when {
+                    indent == 0 && line == "login:" -> {
+                        inLoginSection = true
+                        inCertSection = false
+                    }
+
+                    indent == 0 -> {
+                        inLoginSection = false
+                        inCertSection = false
+                    }
+
+                    inLoginSection && indent == 2 && line == "cert:" -> {
+                        inCertSection = true
+                    }
+
+                    inLoginSection && indent == 2 -> {
+                        inCertSection = false
+                    }
+
+                    inLoginSection && inCertSection && indent == 4 && line.startsWith("name:") -> {
+                        certName = line.substringAfter(':').trim().trim('"', '\'')
+                    }
+
+                    inLoginSection && inCertSection && indent == 4 && line.startsWith("password:") -> {
+                        certPassword = line.substringAfter(':').trim().trim('"', '\'')
+                    }
+                }
+            }
+
+            if (certName.isNullOrBlank() || certPassword.isNullOrBlank()) {
+                return null
+            }
+
+            return LoginCertConfig(
+                name = certName!!,
+                password = certPassword!!,
+            )
+        }
     }
 
     fun loadRules(): List<ExtractionRule> {
@@ -36,6 +97,26 @@ class ConfigManager(private val context: Context) {
         getFromPrefs()?.let { return it }
         Log.w(TAG, "Using default rules as fallback")
         return getDefaultRules()
+    }
+
+    fun loadLoginCertConfig(): LoginCertConfig? {
+        return try {
+            val inputStream = context.assets.open(LOGIN_CONFIG_FILE)
+            val reader = BufferedReader(InputStreamReader(inputStream))
+            val content = reader.readText()
+            reader.close()
+
+            val config = parseLoginCertConfig(content)
+            if (config == null) {
+                Log.e(TAG, "Failed to parse login cert config from config.yaml")
+            } else {
+                Log.d(TAG, "Loaded cert config for ${config.name}")
+            }
+            config
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load login cert config: ${e.message}")
+            null
+        }
     }
 
     private fun getFromAssets(): List<ExtractionRule>? {
