@@ -4,6 +4,66 @@
 
 ## 파일들
 
+### connect_adb_windows.bat
+Windows에서 ADB 서버를 시작하고 WSL에서 접속할 수 있게 해주는 배치 스크립트입니다.
+
+**기능**:
+- Windows에서 ADB 서버 시작 (포트 5037)
+- Windows IP 주소 자동 표시
+- WSL에서 접속하기 위한 안내 제공
+- 연결된 안드로이드 기기 확인
+
+**사용법**:
+1. Windows에서 스크립트 실행 (안드로이드 폰이 USB로 연결된 상태)
+2. 표시된 Windows IP 주소 확인
+3. WSL에서 `./scripts/connect_adb_wsl.sh WINDOWS_IP` 실행 시 해당 IP 사용
+
+```cmd
+scripts\connect_adb_windows.bat
+```
+
+**요구사항**:
+- Windows OS
+- Android SDK 설치 (또는 ADB가 PATH에 등록됨)
+- USB 디버깅이 활성화된 안드로이드 기기
+
+---
+
+### connect_adb_wsl.sh
+WSL에서 Windows ADB 서버에 접속하는 스크립트입니다.
+
+**기능**:
+- Windows IP 자동 감지 (vEthernet (WSL) / Windows 172.* 우선, 이후 /etc/resolv.conf 및 ip route 폴백 사용)
+- Windows ADB 서버 (포트 5037)에 연결
+- ADB_SERVER_SOCKET 환경변수 설정
+- 연결된 기기 목록 표시
+
+**사용법**:
+```bash
+# 자동 감지 (권장)
+./scripts/connect_adb_wsl.sh
+
+# Windows IP 지정
+./scripts/connect_adb_wsl.sh 192.168.1.100
+```
+
+**작동 방식**:
+1. Windows에서 `connect_adb_windows.bat` 실행
+2. WSL에서 이 스크립트를 실행하여 `ADB_SERVER_SOCKET=tcp:WINDOWS_IP:5037` 설정
+3. WSL의 `adb` 클라이언트가 Windows ADB 서버(포트 5037)를 사용
+4. 이 흐름은 adb-over-WiFi가 아니므로 기본적으로 `adb tcpip 5555`를 실행하지 않음
+
+**예시**:
+```bash
+# 연결 후 APK 설치
+adb install app/build/outputs/apk/debug/app-debug.apk
+
+# 로그 확인
+adb logcat | grep MtsaAccessibility
+```
+
+---
+
 ### analyze_ui.py
 MTS 앱의 UI 계층 구조를 분석하여 추출 규칙(JSON)을 자동으로 생성하는 Python 스크립트입니다.
 
@@ -83,6 +143,54 @@ export PATH=$PATH:/Users/y/Downloads/platform-tools
 adb devices
 # USB 디버깅 활성화 확인
 ```
+
+## WSL + Windows ADB 연결 설정
+
+개발 환경이 WSL이고 안드로이드 폰이 Windows에 USB로 연결된 경우, Windows에서 ADB 서버를 실행하고 WSL에서 이에 접속해야 합니다.
+이 워크플로우는 WSL의 adb 클라이언트를 Windows의 adb 서버(포트 5037)에 연결하는 방식이며, Android 기기에 직접 TCP 5555로 붙는 adb-over-WiFi 흐름이 아닙니다.
+
+### 설정 순서
+
+1. **Windows에서 ADB 서버 시작**
+   ```cmd
+   scripts\connect_adb_windows.bat
+   ```
+   - 안드로이드 폰이 USB로 연결되어 있는지 확인
+   - USB 디버깅이 활성화되어 있는지 확인
+   - 화면에 표시되는 Windows IP 주소 기억
+
+2. **WSL에서 Windows ADB 서버에 연결**
+   ```bash
+   ./scripts/connect_adb_wsl.sh
+   ```
+   - Windows IP가 자동으로 감지됩니다
+   - 수동 지정이 필요한 경우: `./scripts/connect_adb_wsl.sh WINDOWS_IP`
+
+3. **이제 WSL에서 ADB 명령어 사용 가능**
+   ```bash
+   adb devices
+   adb install app/build/outputs/apk/debug/app-debug.apk
+   adb logcat | grep MtsaAccessibility
+   ```
+
+### 문제 해결
+
+**Windows 방화벽 차단**
+- Windows 방화벽에서 ADB(5037 포트) 허용 필요
+- 또는 Windows 보안 → 방화벽 → 앱 허용에서 adb.exe 추가
+
+**연결 안 됨**
+1. Windows에서 `adb devices`로 기기가 보이는지 확인
+2. Windows IP가 올바른지 확인 (cmd에서 `ipconfig`)
+3. WSL에서 `ping WINDOWS_IP`로 네트워크 연결 확인
+
+**영구 설정**
+```bash
+# ~/.bashrc 또는 ~/.zshrc에 추가
+export ADB_SERVER_SOCKET=tcp:WINDOWS_IP:5037
+```
+
+---
 
 ## 추가 정보
 
