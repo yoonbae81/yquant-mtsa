@@ -6,7 +6,9 @@ plugins {
 val generatedConfigAssetsDir = layout.buildDirectory.dir("generated/assets/runtime-config")
 
 val copyRuntimeConfig by tasks.registering(Copy::class) {
-    from(rootProject.file("config.yaml"))
+    val runtimeConfig = rootProject.file("config.yaml")
+    onlyIf { runtimeConfig.exists() }
+    from(runtimeConfig)
     into(generatedConfigAssetsDir)
 }
 
@@ -56,6 +58,7 @@ dependencies {
     implementation("com.google.android.material:material:1.9.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

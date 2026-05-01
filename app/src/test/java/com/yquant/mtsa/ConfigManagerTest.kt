@@ -38,4 +38,24 @@ class ConfigManagerTest {
 
         assertNull(config)
     }
+
+    @Test
+    fun resolveLoginCertConfig_prefersSavedPasswordFromAppSettings() {
+        val parsedConfig = LoginCertConfig(name = "조윤배", password = "yaml-secret")
+
+        val config = ConfigManager.resolveLoginCertConfig(parsedConfig, "saved-secret")
+
+        requireNotNull(config)
+        assertEquals("조윤배", config.name)
+        assertEquals("saved-secret", config.password)
+    }
+
+    @Test
+    fun resolveLoginCertConfig_usesSavedPasswordWithoutYamlConfig() {
+        val config = ConfigManager.resolveLoginCertConfig(parsedConfig = null, savedCertPassword = "saved-secret")
+
+        requireNotNull(config)
+        assertEquals("", config.name)
+        assertEquals("saved-secret", config.password)
+    }
 }

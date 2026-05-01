@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -17,9 +18,9 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
 
     private lateinit var loginButton: Button
-    private lateinit var goTo7201Button: Button
+    private lateinit var orderButton: Button
     private lateinit var balanceButton: Button
-    private lateinit var switchAccountButton: Button
+    private lateinit var settingsButton: ImageButton
     private lateinit var statusTextView: TextView
     private lateinit var balanceDataTextView: TextView
 
@@ -31,9 +32,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         loginButton = findViewById(R.id.loginButton)
-        goTo7201Button = findViewById(R.id.goTo7201Button)
+        orderButton = findViewById(R.id.orderButton)
         balanceButton = findViewById(R.id.balanceButton)
-        switchAccountButton = findViewById(R.id.switchAccountButton)
+        settingsButton = findViewById(R.id.settingsButton)
         statusTextView = findViewById(R.id.statusTextView)
         balanceDataTextView = findViewById(R.id.balanceDataTextView)
 
@@ -41,22 +42,19 @@ class MainActivity : AppCompatActivity() {
             loginAfterDelay()
         }
 
-        goTo7201Button.setOnClickListener {
-            navigateTo7201AfterDelay()
+        orderButton.setOnClickListener {
+            navigateToRetirementOrderAfterDelay()
         }
 
         balanceButton.setOnClickListener {
             getBalanceAfterDelay()
         }
 
-        switchAccountButton.setOnClickListener {
-            switchAccountAfterDelay()
+        settingsButton.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // 접근성 서비스 활성화 확인
         checkAccessibilityService()
-
-        // Balance 데이터 수신 리시버 등록
         registerBalanceReceiver()
         registerLoginStatusReceiver()
     }
@@ -81,8 +79,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun navigateTo7201AfterDelay() {
-        // 접근성 서비스가 활성화되어 있는지 확인
+    private fun navigateToRetirementOrderAfterDelay() {
         if (!isAccessibilityServiceEnabled()) {
             Toast.makeText(
                 this,
@@ -92,31 +89,26 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // 버튼 비활성화
-        goTo7201Button.isEnabled = false
-        statusTextView.text = "5초 후에 7201 화면으로 이동합니다..."
+        orderButton.isEnabled = false
+        statusTextView.text = "5초 후에 퇴직연금 주문 화면으로 이동합니다..."
 
-        // 5초 후에 접근성 서비스에 명령 전송
         CoroutineScope(Dispatchers.Main).launch {
             for (i in 5 downTo 1) {
-                statusTextView.text = "${i}초 후에 7201 화면으로 이동합니다..."
+                statusTextView.text = "${i}초 후에 퇴직연금 주문 화면으로 이동합니다..."
                 delay(1000)
             }
 
-            // 접근성 서비스에 명령 보내기
             sendCommandToAccessibilityService("NAVIGATE_TO_7201")
 
             statusTextView.text = "명령을 전송했습니다. MTS 앱을 확인하세요."
 
-            // 3초 후에 버튼 다시 활성화
             delay(3000)
-            goTo7201Button.isEnabled = true
+            orderButton.isEnabled = true
             statusTextView.text = ""
         }
     }
 
     private fun sendCommandToAccessibilityService(command: String) {
-        // 브로드캐스트로 명령 전송
         val intent = Intent("com.yquant.mtsa.ACTION_NAVIGATE")
         intent.putExtra("command", command)
         sendBroadcast(intent)
@@ -156,33 +148,6 @@ class MainActivity : AppCompatActivity() {
             delay(5000)
 
             balanceButton.isEnabled = true
-        }
-    }
-
-    private fun switchAccountAfterDelay() {
-        if (!isAccessibilityServiceEnabled()) {
-            Toast.makeText(
-                this,
-                "접근성 서비스가 활성화되지 않았습니다.",
-                Toast.LENGTH_LONG
-            ).show()
-            return
-        }
-
-        switchAccountButton.isEnabled = false
-        balanceDataTextView.visibility = android.view.View.GONE
-        statusTextView.text = "계좌 변경 중입니다..."
-
-        CoroutineScope(Dispatchers.Main).launch {
-            delay(2000)
-
-            sendCommandToAccessibilityService("SWITCH_ACCOUNT")
-
-            statusTextView.text = "계좌를 변경하고 있습니다..."
-
-            delay(5000)
-
-            switchAccountButton.isEnabled = true
         }
     }
 

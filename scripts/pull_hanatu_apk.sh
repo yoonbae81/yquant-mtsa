@@ -9,28 +9,55 @@ ARTIFACT_ROOT="${REPO_ROOT}/captures/hanatu-apk"
 RAW_DIR="${ARTIFACT_ROOT}/raw"
 JADX_DIR="${ARTIFACT_ROOT}/jadx"
 APKTOOL_DIR="${ARTIFACT_ROOT}/apktool"
-TOOLS_DIR="${REPO_ROOT}/tools/android-tools"
-JADX_BIN="${TOOLS_DIR}/jadx-1.5.5/bin/jadx"
-APKTOOL_JAR="${TOOLS_DIR}/apktool_3.0.2.jar"
-
 mkdir -p "${RAW_DIR}" "${JADX_DIR}" "${APKTOOL_DIR}"
 
-if ! command -v adb >/dev/null 2>&1; then
-  printf 'adb is not installed or not on PATH.\n' >&2
+ADB=""
+for candidate in \
+  "${ADB_PATH:-}" \
+  "$(command -v adb 2>/dev/null || true)" \
+  "${REPO_ROOT}/tools/android-tools/adb" \
+  "${ANDROID_HOME:-}/platform-tools/adb" \
+  "${ANDROID_SDK_ROOT:-}/platform-tools/adb" \
+  "${HOME}/Library/Android/sdk/platform-tools/adb" \
+  "/opt/homebrew/bin/adb" \
+  "/usr/local/bin/adb"; do
+  if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+    ADB="${candidate}"
+    break
+  fi
+done
+
+if [[ -z "${ADB}" ]]; then
+  printf 'adb is not installed or not reachable.\n' >&2
+  printf 'Tried PATH, %s, and common Android SDK locations.\n' "${REPO_ROOT}/tools/android-tools/adb" >&2
   exit 1
 fi
 
-if [[ ! -x "${JADX_BIN}" ]]; then
-  printf 'jadx is missing: %s\n' "${JADX_BIN}" >&2
+ADB_ARGS=()
+
+if ! command -v jadx >/dev/null 2>&1; then
+  printf 'jadx is missing from PATH.\n' >&2
   exit 1
 fi
 
-if [[ ! -f "${APKTOOL_JAR}" ]]; then
-  printf 'apktool jar is missing: %s\n' "${APKTOOL_JAR}" >&2
+if ! command -v apktool >/dev/null 2>&1; then
+  printf 'apktool is missing from PATH.\n' >&2
   exit 1
 fi
 
-mapfile -t DEVICES < <(adb devices | tail -n +2 | awk '$2 == "device" { print $1 }')
+run_adb() {
+  if [[ "${#ADB_ARGS[@]}" -eq 0 ]]; then
+    "${ADB}" "$@"
+  else
+    "${ADB}" "${ADB_ARGS[@]}" "$@"
+  fi
+}
+
+DEVICES=()
+while IFS= read -r device; do
+  [[ -n "${device}" ]] && DEVICES+=("${device}")
+done < <("${ADB}" devices | tail -n +2 | awk '$2 == "device" { print $1 }')
+
 if [[ "${#DEVICES[@]}" -eq 0 ]]; then
   printf 'No authorized adb device is connected.\n' >&2
   exit 1
@@ -45,8 +72,11 @@ fi
 if [[ -n "${PACKAGE_NAME:-}" ]]; then
   PACKAGE="${PACKAGE_NAME}"
 else
-  mapfile -t CANDIDATES < <(
-    adb "${ADB_ARGS[@]}" shell pm list packages | tr -d '\r' | grep -iE 'truefriend|koreainvest|koreainvestment|hanatu|stock' | sed 's/^package://' || true
+  CANDIDATES=()
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] && CANDIDATES+=("${candidate}")
+  done < <(
+    run_adb shell pm list packages | tr -d '\r' | grep -iE 'truefriend|koreainvest|koreainvestment|hanatu|stock' | sed 's/^package://' || true
   )
 
   if [[ "${#CANDIDATES[@]}" -eq 0 ]]; then
@@ -65,8 +95,11 @@ fi
 
 printf 'Using package: %s\n' "${PACKAGE}"
 
-mapfile -t APK_PATHS < <(
-  adb "${ADB_ARGS[@]}" shell pm path "${PACKAGE}" | tr -d '\r' | sed 's/^package://' || true
+APK_PATHS=()
+while IFS= read -r apk_path; do
+  [[ -n "${apk_path}" ]] && APK_PATHS+=("${apk_path}")
+done < <(
+  run_adb shell pm path "${PACKAGE}" | tr -d '\r' | sed 's/^package://' || true
 )
 
 if [[ "${#APK_PATHS[@]}" -eq 0 ]]; then
@@ -82,7 +115,7 @@ for REMOTE_PATH in "${APK_PATHS[@]}"; do
   FILE_NAME="$(basename "${REMOTE_PATH}")"
   LOCAL_PATH="${RAW_DIR}/${FILE_NAME}"
   printf 'Pulling %s -> %s\n' "${REMOTE_PATH}" "${LOCAL_PATH}"
-  adb "${ADB_ARGS[@]}" pull "${REMOTE_PATH}" "${LOCAL_PATH}"
+  run_adb pull "${REMOTE_PATH}" "${LOCAL_PATH}"
   if [[ "${FILE_NAME}" == "base.apk" ]]; then
     BASE_APK="${LOCAL_PATH}"
   fi
@@ -93,10 +126,14 @@ if [[ -z "${BASE_APK}" ]]; then
 fi
 
 printf 'Decompiling base APK with JADX: %s\n' "${BASE_APK}"
-"${JADX_BIN}" -d "${JADX_DIR}" "${BASE_APK}"
+if ! jadx -d "${JADX_DIR}" "${BASE_APK}"; then
+  printf 'jadx finished with warnings or errors, but output was still written to %s\n' "${JADX_DIR}" >&2
+fi
 
 printf 'Decompiling resources/smali with apktool: %s\n' "${BASE_APK}"
-java -jar "${APKTOOL_JAR}" d -f -o "${APKTOOL_DIR}" "${BASE_APK}"
+if ! apktool d -f -o "${APKTOOL_DIR}" "${BASE_APK}"; then
+  printf 'apktool finished with warnings or errors, but partial output may exist at %s\n' "${APKTOOL_DIR}" >&2
+fi
 
 printf '\nDone. Artifacts:\n'
 printf '  raw:     %s\n' "${RAW_DIR}"

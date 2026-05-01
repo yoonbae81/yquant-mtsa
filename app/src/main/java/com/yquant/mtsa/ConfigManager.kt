@@ -27,6 +27,12 @@ data class LoginCertConfig(
     val password: String
 )
 
+data class CredentialSettings(
+    val certPassword: String = "",
+    val irpAccountPassword: String = "",
+    val dcAccountPassword: String = ""
+)
+
 class ConfigManager(private val context: Context) {
 
     companion object {
@@ -35,6 +41,9 @@ class ConfigManager(private val context: Context) {
         private const val PREFS_NAME = "mtsa_config"
         private const val RULES_KEY = "extraction_rules"
         private const val LOGIN_CONFIG_FILE = "config.yaml"
+        private const val CREDENTIAL_CERT_PASSWORD_KEY = "credential_cert_password"
+        private const val CREDENTIAL_IRP_PASSWORD_KEY = "credential_irp_password"
+        private const val CREDENTIAL_DC_PASSWORD_KEY = "credential_dc_password"
 
         fun parseLoginCertConfig(content: String): LoginCertConfig? {
             var inLoginSection = false
@@ -90,6 +99,20 @@ class ConfigManager(private val context: Context) {
                 password = certPassword!!,
             )
         }
+
+        fun resolveLoginCertConfig(
+            parsedConfig: LoginCertConfig?,
+            savedCertPassword: String,
+        ): LoginCertConfig? {
+            if (savedCertPassword.isBlank()) {
+                return parsedConfig
+            }
+
+            return LoginCertConfig(
+                name = parsedConfig?.name.orEmpty(),
+                password = savedCertPassword,
+            )
+        }
     }
 
     fun loadRules(): List<ExtractionRule> {
@@ -100,6 +123,7 @@ class ConfigManager(private val context: Context) {
     }
 
     fun loadLoginCertConfig(): LoginCertConfig? {
+        val savedCertPassword = loadCredentialSettings().certPassword
         return try {
             val inputStream = context.assets.open(LOGIN_CONFIG_FILE)
             val reader = BufferedReader(InputStreamReader(inputStream))
@@ -112,10 +136,36 @@ class ConfigManager(private val context: Context) {
             } else {
                 Log.d(TAG, "Loaded cert config for ${config.name}")
             }
-            config
+
+            resolveLoginCertConfig(config, savedCertPassword)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load login cert config: ${e.message}")
-            null
+            resolveLoginCertConfig(parsedConfig = null, savedCertPassword = savedCertPassword)
+        }
+    }
+
+    fun loadCredentialSettings(): CredentialSettings {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return CredentialSettings(
+            certPassword = prefs.getString(CREDENTIAL_CERT_PASSWORD_KEY, "").orEmpty(),
+            irpAccountPassword = prefs.getString(CREDENTIAL_IRP_PASSWORD_KEY, "").orEmpty(),
+            dcAccountPassword = prefs.getString(CREDENTIAL_DC_PASSWORD_KEY, "").orEmpty()
+        )
+    }
+
+    fun saveCredentialSettings(settings: CredentialSettings): Boolean {
+        return try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString(CREDENTIAL_CERT_PASSWORD_KEY, settings.certPassword)
+                .putString(CREDENTIAL_IRP_PASSWORD_KEY, settings.irpAccountPassword)
+                .putString(CREDENTIAL_DC_PASSWORD_KEY, settings.dcAccountPassword)
+                .apply()
+            Log.d(TAG, "Saved credential settings")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save credential settings: ${e.message}")
+            false
         }
     }
 
