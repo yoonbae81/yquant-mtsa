@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,6 +78,26 @@ class OrderExecutionResult:
         }
 
 
+@dataclass(frozen=True)
+class QuantityInputResult:
+    expected_quantity: int
+    text: str
+    passed: bool
+    source_image: str
+    crop_image: str
+    ocr_json: str
+
+    def to_dict(self) -> dict:
+        return {
+            "expected_quantity": self.expected_quantity,
+            "text": self.text,
+            "passed": self.passed,
+            "source_image": self.source_image,
+            "crop_image": self.crop_image,
+            "ocr_json": self.ocr_json,
+        }
+
+
 class OrderExecutor:
     def __init__(
         self,
@@ -102,7 +123,9 @@ class OrderExecutor:
         context = self._open_order_route(request.route_name, account)
         self._select_symbol(request)
         self._select_market_price()
-        self._input_quantity(request.quantity)
+        quantity_result = self._input_quantity(request.quantity, psm=request.psm)
+        if not quantity_result.passed:
+            raise RuntimeError("quantity input verification failed")
 
         verification = self._verify_current_order(request, label="order-before-submit")
         decision = decide_submit_permission(
@@ -200,13 +223,38 @@ class OrderExecutor:
     def _select_market_price(self) -> None:
         self._tap_profile_point("order.market_price")
 
-    def _input_quantity(self, quantity: int) -> None:
+    def _input_quantity(self, quantity: int, *, psm: int = 7) -> QuantityInputResult:
         self._tap_profile_point("order.quantity_input")
         for _ in range(12):
             self.device.keyevent(67)
         self.device.input_text(str(quantity))
         self.device.keyevent(66)
         time.sleep(1)
+        return self._verify_quantity_input(quantity, psm=psm)
+
+    def _verify_quantity_input(self, quantity: int, *, psm: int) -> QuantityInputResult:
+        image = self.artifacts.next_path("quantity-input-source", ext="png")
+        crop = self.artifacts.next_path("quantity-input", ext="png")
+        ocr_json = self.artifacts.next_path("quantity-input", ext="json")
+        decision_json = self.artifacts.next_path("quantity-input-verification", ext="json")
+        self.capture.capture(image)
+        self.capture.crop(image, self.profile.region("order.quantity_input"), crop)
+        result = self.ocr.recognize(crop, psm=psm)
+        result.save_json(ocr_json)
+        passed = quantity_text_matches(result.text, quantity)
+        quantity_result = QuantityInputResult(
+            expected_quantity=quantity,
+            text=result.text,
+            passed=passed,
+            source_image=str(image),
+            crop_image=str(crop),
+            ocr_json=str(ocr_json),
+        )
+        decision_json.write_text(
+            json.dumps(quantity_result.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return quantity_result
 
     def _verify_current_order(self, request: OrderRequest, *, label: str) -> dict:
         image = self.artifacts.next_path(f"{label}-source", ext="png")
@@ -285,3 +333,7 @@ def normalize_order_side(side: str) -> str:
     if normalized in {"sell", "s", "매도"}:
         return "매도"
     raise ValueError("side must be buy/sell or 매수/매도")
+
+
+def quantity_text_matches(text: str, expected_quantity: int) -> bool:
+    return str(expected_quantity) in re.sub(r"[^0-9]", " ", text).split()
