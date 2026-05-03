@@ -1,0 +1,5 @@
+accounts:
+  DC:
+    password: "replace-me"
+  IRP:
+    password: "replace-me"

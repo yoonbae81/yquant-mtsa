@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+run_cli() {
+  export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+
+  if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
+    exec "$REPO_ROOT/.venv/bin/python" -m pension.cli "$@"
+  else
+    exec python3 -m pension.cli "$@"
+  fi
+}
+
+if [[ $# -lt 1 ]]; then
+  run_cli --help
+fi
+
+command="$1"
+shift
+
+case "$command" in
+  init)
+    run_cli init-profile "$@"
+    ;;
+  validate)
+    run_cli validate-profile "$@"
+    ;;
+  set-point|set-region|set-swipe|read-region|crop|check|detect-recovery)
+    run_cli "$command" "$@"
+    ;;
+  *)
+    run_cli "$command" "$@"
+    ;;
+esac

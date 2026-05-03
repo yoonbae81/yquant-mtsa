@@ -2,153 +2,266 @@
 
 이 문서는 이 저장소에서 작업하는 에이전트와 로컬 개발자를 위한 작업 노트입니다. 사용자용 개요와 실행 방법은 `README.md`를 우선 확인합니다.
 
+## 프로젝트 기준
+
+이 프로젝트는 한국투자증권 KIS Mobile Trading System(MTS) 자동화를 위한 하이브리드 구조입니다.
+
+- `src/pension/`: Python ADB 컨트롤러. 전체 상태 머신, 앱 실행/딥링크, screenshot/crop/OCR, profile 기반 좌표 조작, 계좌 비밀번호 입력, 잔고조회, 주문 검증/실행을 담당합니다.
+- `src/login/`: Android login helper. 공동인증서 로그인과 캡처 불가 TransKey 보안키패드 입력만 담당합니다.
+- CLI 진입점은 `scripts/` 아래에 둡니다.
+- Python 테스트는 `tests/` 아래에 둡니다.
+- 과거 분석 스크립트, 디컴파일/캡처 자료, 이전 문서는 `old/` 아래 참고용으로 보관합니다.
+- 접근성 트리와 gesture는 조악하므로 주문 본문 자동화의 핵심 경로로 확장하지 않습니다.
+
 ## 로컬 도구 경로
 
-- ADB/fastboot 로컬 경로: `/Users/y/Github/yquant-mtsa/tools/android-tools`
-- ADB 실행 파일: `/Users/y/Github/yquant-mtsa/tools/android-tools/adb`
-- Homebrew Java 홈 경로: `/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`
-- Homebrew Java 실행 파일 경로: `/opt/homebrew/opt/openjdk@17/bin/java`
+환경 확인:
 
 ```bash
-export PATH="/Users/y/Github/yquant-mtsa/tools/android-tools:$PATH"
-export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
-export PATH="$JAVA_HOME/bin:$PATH"
+make setup
+make check-env
 ```
 
-`openjdk`(25)를 제거한 경우에도 `openjdk@17`이 설치되어 있으면 Gradle, apktool, jadx를 계속 사용할 수 있습니다.
+`make setup`은 `.venv`와 Python 의존성을 준비하고 ADB/Tesseract 실행 파일 존재를 확인합니다. `make check-env`는 ADB/Tesseract 버전과 연결 기기 목록을 확인합니다.
 
-## 분석 산출물
+## 디렉터리 규칙
 
-- 디컴파일 산출물 경로: `/Users/y/Github/yquant-mtsa/captures/hanatu-apk`
+```text
+src/pension/     # Python ADB 컨트롤러 코드
+src/pension/profiles/ # 공유 가능한 해상도별 캘리브레이션 profile
+src/login/       # Android login helper
+tests/                  # Python 단위 테스트
+scripts/                # 실행 진입점
+docs/                   # 설계 문서
+screenshots/            # 임시 화면 캡처, 언제든 삭제 가능
+runs/                   # 실행 산출물, git 제외
+old/                    # 기존 Android/접근성 구현과 참고 자료
+```
 
-MTS 앱 디컴파일 결과나 화면 캡처 기반 분석이 필요하면 `captures/` 아래 산출물을 먼저 확인합니다.
+캘리브레이션 profile은 git에 올릴 수 있는 공유 자료여야 합니다. 기기 serial이나 비밀번호 같은 개인/비밀 정보는 profile에 저장하지 않습니다.
+
+권장 profile 구조:
+
+```text
+src/pension/profiles/
+  1080x2340/
+    manifest.json
+    retirement-order.json
+    account-password.json
+    keypads.json
+    recovery.json
+```
+
+## 비밀 정보
+
+Python ADB 컨트롤러가 직접 쓰는 개인/비밀 정보는 `config.yaml`에 둡니다.
+저장소에는 `config.example.yaml`만 올리고, 실제 `config.yaml`은 git에 올리지 않습니다.
+
+예상 구조:
+
+```yaml
+accounts:
+  DC:
+    password: "..."
+  IRP:
+    password: "..."
+```
+
+주의:
+
+- `config.yaml`의 비밀번호를 로그나 최종 답변에 노출하지 않습니다.
+- 공동인증서 비밀번호는 ADB broadcast extra나 profile JSON에 넣지 않습니다.
+- 공동인증서 비밀번호는 Android login helper 내부 Android Keystore 기반 암호화 저장소에 둡니다.
+- profile JSON에는 공동인증서 비밀번호, 계좌 비밀번호, 기기 serial, 전체 계좌번호를 저장하지 않습니다.
+- 계좌 검증이 필요하면 마스킹 값이나 일부 문자열만 별도 정책으로 다룹니다.
 
 ## 스크린샷 파일
 
-PNG 스크린샷 파일은 저장소 임의 위치에 만들지 말고 `screenshots/` 폴더에 저장합니다. 파일명은 `yyyymmdd-title.png` 형식을 사용하고, `title`은 내용을 알아볼 수 있는 짧은 영문 kebab-case로 작성합니다.
+임시 PNG 스크린샷은 `screenshots/` 폴더에 저장합니다.
 
-예: `screenshots/20260502-accessibility-settings.png`
+파일명은 `yyyymmdd-title.png` 형식을 사용하고, `title`은 내용을 알아볼 수 있는 짧은 영문 kebab-case로 작성합니다.
 
-## MTS 자동화 방법론
+예:
 
-대상 기기의 Android 10 환경에서는 접근성 스크린샷 캡처를 사용할 수 없다는 전제로 작업합니다. 화면 상태 확인이 필요하면 ADB로 스크린샷을 캡처하고, 캡처 이미지를 OCR로 인식해 현재 화면과 문구를 파악합니다.
-
-```bash
-adb exec-out screencap -p > screenshots/yyyymmdd-title.png
+```text
+screenshots/20260503-account-password.png
+screenshots/20260503-retirement-order.png
 ```
 
-기능 구현 시에는 OCR로 얻은 화면 정보와 `captures/` 아래의 디컴파일 산출물을 함께 분석합니다. 단순히 좌표 `x, y`를 찍어 클릭하는 방식은 화면 크기, 해상도, 앱 업데이트에 취약하므로 우선순위에서 낮게 둡니다. 가능하면 디컴파일 정보에서 화면 구조와 컨트롤 트리를 파악하고, 접근성 노드의 텍스트, 설명, 클래스명, 계층 관계를 기준으로 원하는 컨트롤을 찾아 클릭하는 방식으로 구현합니다.
+`screenshots/`는 언제든 삭제 가능한 임시 폴더로 취급합니다.
 
-좌표 기반 클릭은 컨트롤 트리 기반 접근이 불가능하거나 확인용 임시 실험이 필요한 경우에만 제한적으로 사용합니다.
+## 분석 산출물
 
-## 한국투자 앱 동작 요건
+한국투자 앱 디컴파일 산출물과 과거 화면 캡처는 `old/captures/` 아래에 있습니다.
 
-테스트 중 한국투자 앱이 종료되었거나 테스트를 위해 직접 종료한 뒤 다시 실행하면, 한국투자 앱의 기본 동작에 따라 공동인증서 로그인을 다시 수행해야 합니다.
+주요 경로:
 
-중요: `com.yquant.mtsa` 앱을 `adb uninstall` 하거나 기기에서 삭제하면, MTSA 앱 환경설정에 저장된 공동인증서 비밀번호/IRP 비밀번호/DC 비밀번호가 함께 삭제됩니다. 계좌 비밀번호/공동인증서 비밀번호 실기 검증 중에는 앱 삭제를 기본 선택지로 쓰지 말고, 우선 `adb install -r ...` 재설치, `am force-stop`, 접근성 서비스 재활성화, 앱 재실행으로 복구를 시도합니다. 정말 삭제가 필요할 때만, 저장된 비밀번호를 다시 입력해야 한다는 점을 전제로 진행합니다.
+```text
+old/captures/hanatu-apk/
+old/captures/hanatu-apk/apktool/
+old/captures/hanatu-apk/jadx/
+```
 
-공동인증서 로그인 자동화 기능은 이미 구현되어 있으므로, 앱 재실행 후 자동화 흐름을 검증할 때는 로그인 단계가 먼저 필요한 상태인지 확인하고 해당 기능을 사용합니다. 이때 접근성 서비스에 `LOGIN` 브로드캐스트를 직접 보내는 우회 경로보다, MTSA 앱을 열고 첫 번째 `[공동인증서 로그인]` 버튼을 실제로 눌러 `MainActivity`의 버튼 핸들러 경로를 타는 방식을 우선합니다. 이 경로는 저장된 공동인증서 비밀번호 확인, 한국투자 앱 실행, 공동인증서 로그인 화면 탐색, 보안 키보드 열기, 비밀번호 입력, 로그인 버튼 클릭까지 포함합니다.
+한국투자 앱 구조를 확인할 때는 `old/captures/hanatu-apk/`를 우선 사용합니다. `old/captures/current_apk_jadx/`는 이 저장소의 예전 앱을 디컴파일한 산출물일 수 있으므로 한국투자 앱 분석의 우선 자료로 쓰지 않습니다.
 
-ADB로 실행할 때는 다음 순서로 진행합니다.
+## 자동화 방법론
+
+자동화의 주 제어 경로는 Python ADB 컨트롤러입니다.
+
+- 화면 캡처: `adb exec-out screencap -p`
+- 입력: `adb shell input tap/text/keyevent/swipe`
+- 앱 실행/딥링크: `adb shell am start ...`
+- 화면 인식: screenshot crop + OCR + 이미지 매칭
+- 실행 판단: 상태 머신과 profile 기반 검증
+
+접근성 노드나 `dispatchGesture()`는 주문 본문 자동화의 핵심 경로로 사용하지 않습니다. 한국투자 MTS의 퇴직연금 주문 본문은 접근성 트리와 접근성 gesture에서 신뢰할 수 없다는 실기 증거가 있습니다.
+
+공동인증서/TransKey 보안키패드 입력은 일반 ADB text 입력이 인정되지 않고 ADB screenshot도 차단될 수 있으므로, `src/login/`의 Android login helper에 위임합니다. Python ADB 컨트롤러는 실행 전후 상태 기록과 검증을 담당하고, 키 입력만 helper에 위임합니다. 상세 기준은 `docs/secure-keyboard-strategy.md`를 확인합니다.
+
+## Android login helper 접근성 앱
+
+`src/login/`은 계속 유지하는 Android 접근성 helper 앱입니다. 이 앱은 주문 본문 자동화로 확장하지 않고, 캡처가 막히거나 일반 ADB 입력이 통하지 않는 로그인 영역만 담당합니다.
+
+앱의 사용자 기능은 세 가지로 제한합니다.
+
+- 설정 페이지: 공동인증서 비밀번호를 사용자에게 입력받아 Android Keystore 기반 저장소에 암호화 저장합니다. 공동인증서 비밀번호를 ADB broadcast extra, profile JSON, 로그, 최종 답변에 노출하지 않습니다.
+- 메인 페이지의 `로그인 여부 확인` 버튼: 한국투자 앱을 열고 화면 하단의 햄버거 `메뉴` 아이콘을 누른 뒤, 메뉴 화면의 `로그인`/`로그아웃` 토글 표시로 현재 로그인 상태를 판단합니다.
+- 메인 페이지의 `공동인증서 로그인` 버튼: 저장된 공동인증서 비밀번호를 읽고 한국투자 공동인증서 로그인 화면으로 이동한 뒤 TransKey 보안키패드 입력과 로그인 버튼 실행을 수행합니다. 이 기능은 이미 구현된 접근성 서비스 경로를 우선 사용합니다.
+
+한국투자 앱이 종료되었거나 테스트를 위해 직접 종료한 뒤 다시 실행하면, 한국투자 앱 동작에 따라 공동인증서 로그인이 다시 필요할 수 있습니다.
+
+중요: `com.yquant.mtsa` 앱을 `adb uninstall` 하거나 기기에서 삭제하면 Android Keystore와 앱 내부 저장소의 공동인증서 비밀번호도 함께 삭제될 수 있습니다. 실기 검증 중에는 앱 삭제를 기본 선택지로 쓰지 말고, 우선 `adb install -r ...`, `am force-stop`, 접근성 서비스 재활성화, 앱 재실행으로 복구합니다.
+
+공동인증서 로그인 자동화 검증은 접근성 서비스에 `LOGIN` 브로드캐스트를 직접 보내는 우회 경로보다, MTSA 앱을 열고 `[공동인증서 로그인]` 버튼을 실제로 눌러 `MainActivity`의 버튼 핸들러 경로를 타는 방식을 우선합니다. 이 경로는 저장된 공동인증서 비밀번호 확인, 한국투자 앱 실행, 공동인증서 로그인 화면 탐색, 보안 키보드 열기, 비밀번호 입력, 로그인 버튼 클릭까지 포함합니다.
+
+ADB로 수동 검증할 때는 다음 순서로 진행합니다.
 
 ```bash
 adb shell am start -n com.yquant.mtsa/.MainActivity
 adb shell input tap 540 720
 ```
 
-좌표는 현재 테스트 기기에서 `[공동인증서 로그인]` 버튼 중앙을 누르는 값입니다. 화면 배치가 달라졌다면 먼저 `screenshots/`에 MTSA 앱 화면을 캡처해 버튼 위치를 확인한 뒤 탭합니다. 로그인 성공 여부는 logcat의 `MtsaAccessibility` 태그에서 `공동인증서 로그인이 완료되었습니다.` 메시지로 확인할 수 있습니다.
+좌표는 테스트 기기 화면 배치에 따라 달라질 수 있습니다. 화면 배치가 달라졌다면 먼저 `screenshots/`에 MTSA 앱 화면을 캡처해 버튼 위치를 확인한 뒤 탭합니다. 로그인 성공 여부는 logcat의 `MtsaAccessibility` 태그에서 `공동인증서 로그인이 완료되었습니다.` 메시지로 확인할 수 있습니다.
 
-## 한국투자 앱 디컴파일 매칭 노트
+좌표 기반 조작은 무작정 하드코딩하지 않습니다. 기기 해상도별 profile에 tap point/read region으로 기록하고, 실행 중에는 해당 profile을 통해 사용합니다.
 
-실제 한국투자 앱 산출물은 `captures/hanatu-apk/` 아래를 기준으로 확인합니다. `captures/current_apk_jadx/`는 이 저장소 앱을 디컴파일한 산출물일 수 있으므로, 한국투자 앱 구조를 볼 때 우선 사용하지 않습니다.
+OCR은 매번 버튼 위치를 찾는 용도가 아니라 다음 목적에 우선 사용합니다.
 
-### 메인 액티비티와 딥링크
+- 현재 화면 검증
+- 계좌/종목/매수매도/수량/금액 검증
+- 팝업/오버레이 감지
+- 입력 결과 확인
+- 최종 주문 직전 안전 검증
+
+## CLI 체계
+
+`scripts/` 아래 실행 파일은 프로젝트 prefix 없이 역할 이름만 사용합니다.
+
+```text
+scripts/profile   # 캘리브레이션/profile 관리
+scripts/run       # 운영 시나리오 실행
+scripts/debug     # 저수준 ADB/OCR 디버그
+```
+
+현재 구현이 아직 `scripts/mtsa`에서 출발한 경우에도 새 구현은 위 체계로 이동합니다.
+`scripts/mtsa`는 기존 명령 호환용 wrapper로만 유지합니다.
+
+역할:
+
+- `scripts/profile`: profile 생성, tap point 기록, read region 기록, region OCR 확인
+- `scripts/run`: 로그인, 주문 화면 진입, dry-run/confirm-run/real-run 실행
+- `scripts/debug`: devices, capture, OCR, 단일 tap, 단일 region 읽기
+
+## 한국투자 앱 기본 정보
 
 - 패키지명: `com.truefriend.neosmartarenewal`
-- 메인 화면 액티비티: `com.truefriend.neosmartarenewal.ui.main.MTSMainActivity`
-  - 근거: `captures/hanatu-apk/jadx/resources/AndroidManifest.xml`
-  - `MTSMainActivity`는 `exported=true`, `launchMode=singleTask`입니다.
-- 외부 딥링크 액티비티: `com.truefriend.neosmartarenewal.util.deeplink.AppDeepLinkActivity`
-  - 근거: `captures/hanatu-apk/jadx/resources/AndroidManifest.xml`
-  - `mtsrn`, `neosmartarenewal://content`, `eFriendNeoSmarta://content`, `neosmartaf`, `https://neosmtsrenewal.onelink.me`, `https://kis-pension.onelink.me` 등의 VIEW intent filter가 있습니다.
-- 딥링크 핸들러는 `ActionDeepLink`, `KeyOpenScreenNo` extra를 사용합니다.
-  - 근거: `captures/hanatu-apk/jadx/sources/com/truefriend/neosmartarenewal/util/deeplink/AppDeepLinkHandler.java`
-  - 현재 자동화의 `ActionDeepLink + KeyOpenScreenNo` 방식은 디컴파일 근거가 있는 경로입니다.
+- 메인 액티비티: `com.truefriend.neosmartarenewal.ui.main.MTSMainActivity`
+- 딥링크 extra:
+  - `ActionDeepLink`
+  - `KeyOpenScreenNo`
+  - `KeyOpenScreenData`
 
-### 하단 퀵 메뉴/메뉴 버튼
+디컴파일 근거:
 
-한국투자 메인 화면의 하단 영역은 `activity_mts_main.xml`에 고정 구성으로 선언되어 있습니다.
+- `old/captures/hanatu-apk/jadx/resources/AndroidManifest.xml`
+- `old/captures/hanatu-apk/jadx/sources/com/truefriend/neosmartarenewal/util/deeplink/AppDeepLinkHandler.java`
 
-- `activity_mts_main.xml`
-  - `@id/quick_menu`가 `@layout/layout_quick_menu`를 include하며 `Bottom_toBottomOf=parent`로 붙습니다.
-  - `@id/layoutQuickJisu`도 같은 하단 위치에 있으며, 지수 티커/퀵 지수 모드로 보입니다.
-  - 근거: `captures/hanatu-apk/apktool/res/layout/activity_mts_main.xml`
-- `layout_quick_menu.xml`
-  - 전체 높이: `@dimen/quick_menu_layout_height`
-  - 좌측 메뉴 컨테이너: `@id/llMenu`
-  - 좌측 메뉴 폭: `@dimen/quick_menu_icon_type_menu_width_value`
-  - 좌측 메뉴 아이콘: `@drawable/ico_tab_menu`
-  - 좌측 메뉴 텍스트: `@string/txt_title_menu`
-  - 우측 지수 버튼 영역: `@id/llMarketIndex`
-  - 우측 지수 텍스트: `@string/quick_menu_market_index`
-  - 근거: `captures/hanatu-apk/apktool/res/layout/layout_quick_menu.xml`
-- 관련 치수
-  - `quick_menu_layout_height = 54dp`
-  - `quick_menu_icon_type_menu_width_value = 67dp`
-  - 근거: `captures/hanatu-apk/apktool/res/values/dimens.xml`
-- 관련 문자열
-  - `txt_title_menu = 메뉴`
-  - `txt_total_menu = 메뉴`
-  - `quick_menu_market_index = 지수`
-  - `ticker = 지수`
-  - `quick_menu_setting_close = 닫기`
-  - `txt_close = 닫기`
-  - 근거: `captures/hanatu-apk/apktool/res/values/strings.xml`
+주요 화면 번호:
 
-자동화 규칙:
+- 공동인증서 로그인: `6300`
+- 퇴직연금 ETF/리츠 주문: `7201`
 
-- 메뉴 진입은 전역 텍스트 `"메뉴"` 검색보다 좌측 하단 퀵 메뉴 구조를 우선합니다.
-- 접근성 노드가 잡히면 `@id/llMenu` 또는 하단 22% 이내, 화면 하단 78% 이후에 있는 `"메뉴"` 텍스트를 클릭합니다.
-- 접근성 노드가 불안정하면 디컴파일된 구조를 근거로 전체 화면 기준 좌측 하단, 대략 `x = 화면폭 * 0.09`, `y = 화면높이 - 190px` 부근을 fallback으로 사용합니다. `llMenu` 폭이 `67dp`로 고정되어 있어, 이 좌표는 좌측 메뉴 컨테이너 내부를 겨냥하는 값입니다.
-- 메뉴가 보이지 않으면 하단 퀵 메뉴가 `layoutQuickJisu`/지수 티커 상태로 전환되었거나 오버레이에 가려진 상황일 수 있습니다. 이때 우측 하단 닫기성 컨트롤을 먼저 닫고 메뉴 클릭을 재시도합니다.
+## 캘리브레이션 대상
 
-### 퀵뷰/지수 티커 계열
+우선 캘리브레이션해야 할 화면:
 
-- `activity_mts_main.xml`의 `@id/layoutQuickJisu`는 하단에 붙은 지수 티커 영역입니다.
-  - 내부에 `@id/quickJisuMenu`, `@id/vpQuickJisu`, `@id/llOnMarketIndex`가 있습니다.
-  - 메뉴 아이콘은 `quickJisuMenu` 안의 `@drawable/ico_tab_menu_bold`입니다.
-- 별도 퀵뷰 액티비티도 존재합니다.
-  - 레이아웃: `captures/hanatu-apk/apktool/res/layout/activity_quick_view.xml`
-  - 닫기 버튼: `@id/iv_quick_close`
-  - 주요 카드: `@id/cv_quick_total_asset`, `@id/cv_quick_stock_index`, `@id/cv_quick_favorites`
-  - 관련 문자열: `quick_view_total_asset=총자산`, `quick_view_kospi=코스피`, `quick_view_kosdaq=코스닥`, `quick_view_nasdaq=나스닥`, `quick_view_favorites=관심종목`
+- `retirement_order`
+- `account_password_popup`
+- `secure_number_keypad`
+- `account_select_sheet`
+- `stock_search`
+- `quantity_input`
+- `order_confirm`
+- `order_result`
+- `common_recovery_overlay`
 
-자동화 규칙:
+상세 요구사항은 `docs/calibration-requirements.md`를 확인합니다.
+구현 순서와 안정화 기준은 `docs/implementation-roadmap.md`를 확인합니다.
 
-- 우측 하단에 `X`, `닫기`, `close` 성격의 노드가 있거나 `iv_quick_close` 류 닫기 버튼이 있으면 오버레이/퀵뷰로 보고 닫을 수 있습니다.
-- 단, 일반 탐색 중 무조건 우측 하단 좌표를 누르지 않습니다. 메뉴 버튼이 보이지 않는 경우처럼 목적이 명확할 때만 닫기 fallback을 허용합니다.
-- `총자산`, `지수`, `코스피`, `코스닥`, `나스닥` 등은 퀵뷰/티커 후보이므로 메뉴 진입 대상과 혼동하지 않습니다.
+## 실행 산출물
 
-### 하단 탭/퀵 메뉴 탭
+자동화 실행 결과는 `runs/` 아래에 저장합니다.
 
-- 퀵 메뉴의 개별 탭 레이아웃은 `layout_quick_menu_tab.xml`입니다.
-  - 탭 루트: `@id/layoutCustomView`
-  - 아이콘: `@id/ivTab`
-  - 텍스트: `@id/tvTab`
-  - 탭 폭: `60dp`, 높이: `@dimen/quick_menu_layout_height`
-  - 근거: `captures/hanatu-apk/apktool/res/layout/layout_quick_menu_tab.xml`
+저장 대상:
 
-자동화 규칙:
+- 실행 시각
+- 실행 모드
+- ADB 명령 로그
+- before/after screenshot
+- crop 이미지
+- OCR JSON
+- decision JSON
+- recovery 실행 여부
+- 실패 사유
 
-- `"현재가"`, `"자산"`, `"퇴직주문"` 등 하단 탭은 사용자 설정/퀵 메뉴 편집에 따라 순서나 노출 여부가 바뀔 수 있습니다.
-- 메뉴 버튼(`llMenu`)과 지수 버튼(`llMarketIndex`)은 레이아웃상 양 끝 고정 요소이지만, 중간 탭은 `TabLayout @id/tabContent`에 동적으로 구성됩니다.
-- 따라서 중간 탭은 우선 텍스트/노드 기반으로 찾고, 고정 좌표는 기기별 확인이 끝난 fallback으로만 사용합니다.
+`runs/`는 git에 올리지 않습니다. 실패 케이스를 테스트 자산으로 승격할 때만 별도 fixture로 정리합니다.
+
+## 안전 규칙
+
+실제 주문은 기본값이 아닙니다.
+
+- 기본 실행 모드는 `inspect` 또는 `dry-run`이어야 합니다.
+- `real-run`은 명시적 옵션과 최종 검증 통과가 모두 있을 때만 허용합니다.
+- 주문 전에는 계좌, 종목, 매수/매도 방향, 수량, 금액을 OCR/이미지 검증으로 확인합니다.
+- 알 수 없는 화면이나 주문 정보 불일치가 발생하면 중단합니다.
+- 홍보/공지/세션 연장 등 주문 의미와 무관한 팝업만 Recovery Handler로 닫고 재검증합니다.
+
+Recovery Handler는 최종 주문 버튼을 누르지 않습니다.
 
 ## 작업 완료 기준
 
-코드 변경 작업은 컴파일이 통과한 뒤 ADB로 실제 기기에 설치하고, 기기에서 올바르게 동작하는 것까지 확인해야 하나의 task가 끝난 것으로 봅니다.
+Python ADB 컨트롤러 코드 변경 작업은 다음이 통과해야 완료로 봅니다.
 
 ```bash
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
+make test
+make compile
+```
+
+실행환경을 건드렸거나 ADB/OCR 관련 변경이 있으면 다음도 확인합니다.
+
+```bash
+make check-env
+```
+
+CLI 동작을 건드렸으면 다음도 확인합니다.
+
+```bash
+make cli-help
+```
+
+Android login helper를 수정한 경우에는 별도로 빌드와 기기 설치, 그리고 실제 기기 동작 확인까지 완료해야 합니다.
+
+```bash
+make login-build
+make login-install ADB=/opt/homebrew/bin/adb
 ```

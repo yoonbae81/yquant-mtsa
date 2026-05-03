@@ -15,7 +15,6 @@ ADB=""
 for candidate in \
   "${ADB_PATH:-}" \
   "$(command -v adb 2>/dev/null || true)" \
-  "${REPO_ROOT}/tools/android-tools/adb" \
   "${ANDROID_HOME:-}/platform-tools/adb" \
   "${ANDROID_SDK_ROOT:-}/platform-tools/adb" \
   "${HOME}/Library/Android/sdk/platform-tools/adb" \
@@ -29,7 +28,7 @@ done
 
 if [[ -z "${ADB}" ]]; then
   printf 'adb is not installed or not reachable.\n' >&2
-  printf 'Tried PATH, %s, and common Android SDK locations.\n' "${REPO_ROOT}/tools/android-tools/adb" >&2
+  printf 'Tried PATH, %s, and common Android SDK locations.\n' "adb" >&2
   exit 1
 fi
 

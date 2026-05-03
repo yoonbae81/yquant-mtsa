@@ -1,0 +1,32 @@
+{
+  "screen": "balance_account_sheet",
+  "anchors": [],
+  "tap_points": {
+    "irp_account": {
+      "x": 300,
+      "y": 1785,
+      "rx": 0.277778,
+      "ry": 0.762821,
+      "post_delay_ms": 3000
+    },
+    "dc_account": {
+      "x": 300,
+      "y": 1995,
+      "rx": 0.277778,
+      "ry": 0.852564,
+      "post_delay_ms": 3000
+    }
+  },
+  "regions": {
+    "account_list": {
+      "x": 0,
+      "y": 1500,
+      "w": 1080,
+      "h": 610,
+      "rx": 0.0,
+      "ry": 0.641026,
+      "rw": 1.0,
+      "rh": 0.260684
+    }
+  }
+}

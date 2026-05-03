@@ -14,6 +14,7 @@ venv/
 *.log
 .pytest_cache/
 .env
+config.yaml
 .coverage
 htmlcov/
 .mypy_cache/
@@ -35,23 +36,29 @@ android-prototype/local.properties
 
 # Gradle caches
 android-prototype/.gradle/
+src/login/.gradle/
 
 # Build outputs
 android-prototype/build/
 android-prototype/app/build/
 android-prototype/app/outputs/
+src/login/build/
+src/login/app/build/
+src/login/app/outputs/
 
 # IDE generated (IntelliJ/Android Studio)
 *.iml
 captures/
+old/captures/
+old/app/build/
+old/.gradle/
 .externalNativeBuild/
 .cxx/
-
-# Android tools
-tools/android-tools/
+runs/
+state/
 
 # Reference artifacts
 captures/hanatu-apk/
-screenshots/ 
+screenshots/
 
 .gradle

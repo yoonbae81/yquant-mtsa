@@ -1,0 +1,42 @@
+{
+  "screen": "account_select_sheet",
+  "anchors": {
+    "required": [],
+    "optional": [
+      "IRP",
+      "DC",
+      "계좌",
+      "선택"
+    ],
+    "forbidden": [
+      "오류"
+    ],
+    "min_score": 0.5
+  },
+  "tap_points": {
+    "irp_account": {
+      "x": 540,
+      "y": 545,
+      "rx": 0.5,
+      "ry": 0.232906
+    },
+    "dc_account": {
+      "x": 540,
+      "y": 690,
+      "rx": 0.5,
+      "ry": 0.294872
+    }
+  },
+  "regions": {
+    "account_list": {
+      "x": 60,
+      "y": 455,
+      "w": 960,
+      "h": 315,
+      "rx": 0.055556,
+      "ry": 0.194444,
+      "rw": 0.888889,
+      "rh": 0.134615
+    }
+  }
+}

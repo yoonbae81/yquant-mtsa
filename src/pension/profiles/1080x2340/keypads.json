@@ -1,0 +1,144 @@
+{
+  "screen": "secure_number_keypad",
+  "layout": {
+    "type": "random_numeric_4x3",
+    "rows": 3,
+    "columns": 4,
+    "digit_count": 10,
+    "empty_slot_count": 2,
+    "mapping_strategy": "capture_digit_grid_then_ocr_digits_to_nearest_slot",
+    "note": "Digit tap_points below are sample coordinates from one observed layout only. Runtime must map digits from OCR every time because two empty slots move randomly."
+  },
+  "anchors": {
+    "required": [],
+    "optional": [
+      "취소",
+      "확인",
+      "입력"
+    ],
+    "forbidden": [
+      "오류"
+    ],
+    "min_score": 0.4
+  },
+  "tap_points": {
+    "delete": {
+      "x": 270,
+      "y": 2125,
+      "rx": 0.25,
+      "ry": 0.90812
+    },
+    "complete": {
+      "x": 810,
+      "y": 2125,
+      "rx": 0.75,
+      "ry": 0.90812
+    }
+  },
+  "tap_points_sample_20260503": {
+    "key_1": {
+      "x": 132,
+      "y": 1680,
+      "rx": 0.122222,
+      "ry": 0.717949
+    },
+    "key_2": {
+      "x": 405,
+      "y": 1680,
+      "rx": 0.375,
+      "ry": 0.717949
+    },
+    "key_3": {
+      "x": 675,
+      "y": 1680,
+      "rx": 0.625,
+      "ry": 0.717949
+    },
+    "key_4": {
+      "x": 132,
+      "y": 1825,
+      "rx": 0.122222,
+      "ry": 0.779915
+    },
+    "key_5": {
+      "x": 405,
+      "y": 1825,
+      "rx": 0.375,
+      "ry": 0.779915
+    },
+    "key_6": {
+      "x": 675,
+      "y": 1825,
+      "rx": 0.625,
+      "ry": 0.779915
+    },
+    "key_7": {
+      "x": 945,
+      "y": 1825,
+      "rx": 0.875,
+      "ry": 0.779915
+    },
+    "key_8": {
+      "x": 132,
+      "y": 1975,
+      "rx": 0.122222,
+      "ry": 0.844017
+    },
+    "key_9": {
+      "x": 405,
+      "y": 1975,
+      "rx": 0.375,
+      "ry": 0.844017
+    },
+    "key_0": {
+      "x": 945,
+      "y": 1975,
+      "rx": 0.875,
+      "ry": 0.844017
+    },
+    "delete": {
+      "x": 270,
+      "y": 2125,
+      "rx": 0.25,
+      "ry": 0.90812
+    },
+    "complete": {
+      "x": 810,
+      "y": 2125,
+      "rx": 0.75,
+      "ry": 0.90812
+    }
+  },
+  "regions": {
+    "keypad_full": {
+      "x": 0,
+      "y": 1595,
+      "w": 1080,
+      "h": 620,
+      "rx": 0.0,
+      "ry": 0.681624,
+      "rw": 1.0,
+      "rh": 0.264957
+    },
+    "digit_grid": {
+      "x": 0,
+      "y": 1595,
+      "w": 1080,
+      "h": 465,
+      "rx": 0.0,
+      "ry": 0.681624,
+      "rw": 1.0,
+      "rh": 0.198718
+    },
+    "action_row": {
+      "x": 0,
+      "y": 2060,
+      "w": 1080,
+      "h": 155,
+      "rx": 0.0,
+      "ry": 0.880342,
+      "rw": 1.0,
+      "rh": 0.066239
+    }
+  }
+}

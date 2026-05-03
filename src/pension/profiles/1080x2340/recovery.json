@@ -1,0 +1,50 @@
+{
+  "recoveries": {
+    "common_popup": {
+      "anchors": [
+        "닫기",
+        "확인",
+        "오늘 하루"
+      ],
+      "tap_points": {},
+      "max_attempts": 2,
+      "allowed_actions": [
+        "close",
+        "confirm",
+        "back"
+      ]
+    },
+    "session_notice": {
+      "anchors": [
+        "자동 로그아웃",
+        "로그인 연장"
+      ],
+      "tap_points": {},
+      "max_attempts": 1,
+      "allowed_actions": [
+        "extend",
+        "back"
+      ]
+    },
+    "app_exit_confirm": {
+      "anchors": [
+        "한국투자증권 종료",
+        "종료하시겠습니까",
+        "취소",
+        "앱 종료"
+      ],
+      "tap_points": {
+        "cancel": {
+          "x": 340,
+          "y": 1320,
+          "rx": 0.314815,
+          "ry": 0.564103
+        }
+      },
+      "max_attempts": 1,
+      "allowed_actions": [
+        "cancel"
+      ]
+    }
+  }
+}
