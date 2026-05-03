@@ -26,7 +26,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="MTSA Prototype"
+                android:text="MTSA"
                 android:textSize="24sp"
                 android:textStyle="bold" />
 
@@ -50,19 +50,19 @@
             android:textSize="16sp" />
 
         <Button
-            android:id="@+id/loginButton"
+            android:id="@+id/loginCheckButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="공동인증서 로그인"
+            android:text="로그인 여부 확인"
             android:textSize="16sp" />
 
         <Button
-            android:id="@+id/orderButton"
+            android:id="@+id/loginButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="[퇴직연금 주문]"
+            android:text="공동인증서 로그인"
             android:textSize="16sp" />
 
         <Button
@@ -70,7 +70,39 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="[퇴직연금 잔고]"
+            android:text="퇴직연금 잔고"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/orderButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="퇴직연금 주문"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/selectDcAccountButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="계좌선택: DC"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/selectIrpAccountButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="계좌선택: IRP"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/passwordInputButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="비밀번호 입력"
             android:textSize="16sp" />
 
         <TextView

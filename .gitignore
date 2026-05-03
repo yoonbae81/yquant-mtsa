@@ -50,7 +50,8 @@ captures/
 # Android tools
 tools/android-tools/
 
-# Decompiled reference artifacts
+# Reference artifacts
 captures/hanatu-apk/
+screenshots/ 
 
 .gradle

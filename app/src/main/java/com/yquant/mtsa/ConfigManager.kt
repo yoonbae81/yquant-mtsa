@@ -40,6 +40,7 @@ class ConfigManager(private val context: Context) {
         private const val CONFIG_FILE = "balance_extraction_rules.json"
         private const val PREFS_NAME = "mtsa_config"
         private const val RULES_KEY = "extraction_rules"
+        private const val HOLDING_TICKER_MAP_KEY = "holding_ticker_map"
         private const val LOGIN_CONFIG_FILE = "config.yaml"
         private const val CREDENTIAL_CERT_PASSWORD_KEY = "credential_cert_password"
         private const val CREDENTIAL_IRP_PASSWORD_KEY = "credential_irp_password"
@@ -264,6 +265,38 @@ class ConfigManager(private val context: Context) {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save rules to preferences: ${e.message}")
+            false
+        }
+    }
+
+    fun loadHoldingTickerMap(): Map<String, String> {
+        return try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val jsonString = prefs.getString(HOLDING_TICKER_MAP_KEY, null) ?: return emptyMap()
+            val json = JSONObject(jsonString)
+            buildMap {
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    put(key, json.optString(key, ""))
+                }
+            }.filterValues { it.isNotBlank() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load holding ticker map: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    fun saveHoldingTicker(name: String, ticker: String): Boolean {
+        return try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val current = JSONObject(prefs.getString(HOLDING_TICKER_MAP_KEY, "{}") ?: "{}")
+            current.put(name, ticker)
+            prefs.edit().putString(HOLDING_TICKER_MAP_KEY, current.toString()).apply()
+            Log.d(TAG, "Saved holding ticker mapping for $name -> $ticker")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save holding ticker map: ${e.message}")
             false
         }
     }
