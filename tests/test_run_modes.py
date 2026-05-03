@@ -20,6 +20,16 @@ class RunModeTests(unittest.TestCase):
             decide_submit_permission("real-run", verified=True, explicit_real_run=True).may_tap_submit
         )
 
+    def test_real_run_requires_config_allow_flag_when_provided(self):
+        self.assertFalse(
+            decide_submit_permission(
+                "real-run",
+                verified=True,
+                explicit_real_run=True,
+                config_allows_real_run=False,
+            ).may_tap_submit
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

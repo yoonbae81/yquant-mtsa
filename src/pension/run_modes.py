@@ -25,7 +25,13 @@ class RunModeDecision:
         }
 
 
-def decide_submit_permission(mode: str, *, verified: bool, explicit_real_run: bool = False) -> RunModeDecision:
+def decide_submit_permission(
+    mode: str,
+    *,
+    verified: bool,
+    explicit_real_run: bool = False,
+    config_allows_real_run: bool = True,
+) -> RunModeDecision:
     run_mode = RunMode(mode)
     if run_mode == RunMode.INSPECT:
         return RunModeDecision(run_mode, False, "inspect mode never taps submit")
@@ -35,6 +41,8 @@ def decide_submit_permission(mode: str, *, verified: bool, explicit_real_run: bo
         return RunModeDecision(run_mode, False, "confirm-run requires an external user approval step")
     if not verified:
         return RunModeDecision(run_mode, False, "real-run requires verified order fields")
+    if not config_allows_real_run:
+        return RunModeDecision(run_mode, False, "real-run requires allow_real_run in config")
     if not explicit_real_run:
         return RunModeDecision(run_mode, False, "real-run requires explicit_real_run")
     return RunModeDecision(run_mode, True, "real-run submit allowed")

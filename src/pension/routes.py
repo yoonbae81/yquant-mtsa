@@ -292,4 +292,11 @@ DEFAULT_ROUTES: dict[str, InformationRoute] = {
         read_regions=(),
         requires_account_password=True,
     ),
+    "체결결과": InformationRoute(
+        name="체결결과",
+        screen="주문",
+        tab="체결",
+        expansions=(),
+        read_regions=(("체결결과", "order.filled_results"),),
+    ),
 }

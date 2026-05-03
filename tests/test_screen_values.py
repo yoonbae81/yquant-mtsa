@@ -49,6 +49,20 @@ class ScreenValuesTests(unittest.TestCase):
         self.assertIn("account_type:IRP", result.missing)
         self.assertIn("quantity:3", result.matched)
 
+    def test_verify_order_text_matches_market_price_type(self):
+        result = verify_order_text(
+            "IRP TIGER 미국S&P500 매수 시장가 수량 7",
+            ExpectedOrder(
+                account_type="IRP",
+                symbol_name="TIGER 미국S&P500",
+                side="매수",
+                quantity=7,
+                price_type="시장가",
+            ),
+        )
+
+        self.assertTrue(result.passed)
+
 
 if __name__ == "__main__":
     unittest.main()

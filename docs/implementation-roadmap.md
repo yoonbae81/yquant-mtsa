@@ -45,13 +45,13 @@
 5. `debug capture/read-region/check/detect-recovery` 루프 안정화
 6. `profile set-point/set-region`으로 1차 profile 완성
 7. `run inspect` 구현
-8. `run open-retirement-order` 구현
+8. `run open-order` 구현
 9. `run login` 구현
    - login helper readiness 확인
    - `login-command LOGIN` 호출
    - 로그인 후 MTS shell 또는 목표 화면 검증
    - helper 실패 사유를 redacted run artifact로 기록
-10. `run retirement-order --dry-run` 구현
+10. `run order --dry-run` 구현
 11. 장시간 dry-run으로 recovery fixture 축적
 12. `confirm-run`, `real-run` 순서로 제한적으로 개방
 

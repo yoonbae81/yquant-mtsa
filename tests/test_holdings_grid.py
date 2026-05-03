@@ -1,6 +1,6 @@
 import unittest
 
-from pension.holdings_grid import BalanceHoldingsGridParser
+from pension.holdings_grid import BalanceHoldingsGridParser, HoldingRow, merge_holding_rows
 from pension.ocr import OcrResult, OcrWord
 
 
@@ -79,6 +79,19 @@ class HoldingsGridTests(unittest.TestCase):
 
         self.assertEqual(rows[0].name, "RISEKOFR금리액티브(합성)")
         self.assertEqual(rows[1].name, "KODEX국고채10년액티브")
+
+    def test_merges_rows_seen_across_vertical_scroll_pages(self):
+        rows = merge_holding_rows(
+            [
+                HoldingRow("AAA", quantity=10, average_price=None, tap_x=145, tap_y=1500),
+                HoldingRow("BBB", quantity=20, average_price=2000, tap_x=145, tap_y=1700),
+                HoldingRow("AAA", quantity=None, average_price=1000, tap_x=145, tap_y=1300),
+            ]
+        )
+
+        self.assertEqual([row.name for row in rows], ["AAA", "BBB"])
+        self.assertEqual(rows[0].quantity, 10)
+        self.assertEqual(rows[0].average_price, 1000)
 
 
 if __name__ == "__main__":

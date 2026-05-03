@@ -25,6 +25,9 @@ class EventResult:
     auto_save_enabled: bool | None = None
     auto_save_toggled: bool = False
     skipped_by_session_state: bool = False
+    account_label_text: str | None = None
+    input_confirmed: bool = False
+    failure_count: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -37,6 +40,9 @@ class EventResult:
             "auto_save_enabled": self.auto_save_enabled,
             "auto_save_toggled": self.auto_save_toggled,
             "skipped_by_session_state": self.skipped_by_session_state,
+            "account_label_text": self.account_label_text,
+            "input_confirmed": self.input_confirmed,
+            "failure_count": self.failure_count,
         }
 
     def apply_to_context(self, context: InformationContext) -> InformationContext:
@@ -113,6 +119,20 @@ class AccountPasswordPopupHandler:
         if not password.isdigit():
             return self._save(EventResult(self.event_name, detected=True, handled=False, account=account, reason="password_contains_non_digit"), output_json)
 
+        account_label_text = self._read_account_label(source_image)
+        if account_label_text and self._account_label_conflicts(account_label_text, account):
+            return self._save(
+                EventResult(
+                    self.event_name,
+                    detected=True,
+                    handled=False,
+                    account=account,
+                    reason="account_label_mismatch",
+                    account_label_text=account_label_text,
+                ),
+                output_json,
+            )
+
         auto_save_toggled = self._ensure_auto_save_enabled(source_image)
         if auto_save_toggled is None:
             return self._save(
@@ -123,6 +143,7 @@ class AccountPasswordPopupHandler:
                     account=account,
                     reason="unknown_auto_save_toggle_state",
                     auto_save_enabled=None,
+                    account_label_text=account_label_text,
                 ),
                 output_json,
             )
@@ -141,6 +162,7 @@ class AccountPasswordPopupHandler:
                     reason="incomplete_keypad_mapping",
                     auto_save_enabled=True,
                     auto_save_toggled=auto_save_toggled,
+                    account_label_text=account_label_text,
                 ),
                 output_json,
             )
@@ -151,6 +173,28 @@ class AccountPasswordPopupHandler:
 
         complete = self.profile.tap_point("secure_number_keypad.complete")
         self.device.tap(complete.x, complete.y)
+        confirmation_image = source_image.parent / "account-password-after-input.png"
+        capture.capture(confirmation_image)
+        confirmation_ocr = self.ocr.recognize(confirmation_image, psm=6)
+        failure_count = self._failure_count(confirmation_ocr.text)
+        input_confirmed = failure_count == 0 and not self.detect(confirmation_ocr)
+        if not input_confirmed:
+            return self._save(
+                EventResult(
+                    self.event_name,
+                    detected=True,
+                    handled=False,
+                    account=account,
+                    reason="account_password_input_failed" if failure_count else "input_not_confirmed",
+                    digit_count=len(password),
+                    auto_save_enabled=True,
+                    auto_save_toggled=auto_save_toggled,
+                    account_label_text=account_label_text,
+                    input_confirmed=False,
+                    failure_count=failure_count,
+                ),
+                output_json,
+            )
         return self._save(
             EventResult(
                 self.event_name,
@@ -160,9 +204,20 @@ class AccountPasswordPopupHandler:
                 digit_count=len(password),
                 auto_save_enabled=True,
                 auto_save_toggled=auto_save_toggled,
+                account_label_text=account_label_text,
+                input_confirmed=True,
             ),
             output_json,
         )
+
+    def _read_account_label(self, image: Path) -> str:
+        try:
+            region = self.profile.region("account_password_popup.account_label")
+        except (KeyError, ValueError):
+            return ""
+        crop_output = image.parent / "account-password-account-label.png"
+        ScreenCapture(self.device).crop(image, region, crop_output)
+        return self.ocr.recognize(crop_output, psm=7).text.strip()
 
     def _ensure_auto_save_enabled(self, image: Path) -> bool | None:
         state = self._auto_save_toggle_state(image)
@@ -218,6 +273,18 @@ class AccountPasswordPopupHandler:
         ocr_result = self.ocr.recognize_words(crop_output, psm=6)
         crop_region = Region(0, 0, region.w, region.h)
         return RandomNumericKeypadMapper(crop_region).map_digits(ocr_result).translated(region.x, region.y)
+
+    @staticmethod
+    def _failure_count(text: str) -> int:
+        normalized = text.replace(" ", "")
+        markers = ("오류", "실패", "불일치", "잘못", "다시입력", "초과")
+        return sum(normalized.count(marker) for marker in markers)
+
+    @staticmethod
+    def _account_label_conflicts(text: str, account: str) -> bool:
+        upper_text = text.upper()
+        other_accounts = {"IRP": "DC", "DC": "IRP"}
+        return other_accounts.get(account.upper(), "") in upper_text
 
     @staticmethod
     def _save(result: EventResult, output_json: str | Path | None) -> EventResult:

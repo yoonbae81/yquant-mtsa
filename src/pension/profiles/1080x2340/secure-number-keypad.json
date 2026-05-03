@@ -21,6 +21,14 @@
     ],
     "min_score": 0.4
   },
+  "tap_points": {
+    "complete": {
+      "x": 810,
+      "y": 2125,
+      "rx": 0.75,
+      "ry": 0.90812
+    }
+  },
   "tap_points_sample_20260503": {
     "key_1": {
       "x": 132,

@@ -5,7 +5,7 @@ from pathlib import Path
 from pension.config import PensionConfig
 from pension.device_profile import DeviceProfile
 from pension.events import AccountPasswordPopupHandler, EventResult, ToggleState
-from pension.ocr import OcrResult
+from pension.ocr import OcrResult, OcrWord
 from pension.routes import InformationContext
 
 
@@ -16,13 +16,26 @@ class FakeDevice:
     def tap(self, x, y):
         self.taps.append((x, y))
 
+    def screencap(self, output_path):
+        from PIL import Image
+
+        image = Image.new("RGB", (1080, 2340), "white")
+        image.save(output_path)
+        return output_path
+
 
 class FakeOcr:
-    def __init__(self, result):
-        self.result = result
+    def __init__(self, result, *, words_result=None):
+        self.results = list(result if isinstance(result, list) else [result])
+        self.words_result = words_result or OcrResult("keypad.png", "kor+eng", "", [])
 
     def recognize(self, image_path, psm=6):
-        return self.result
+        if len(self.results) == 1:
+            return self.results[0]
+        return self.results.pop(0)
+
+    def recognize_words(self, image_path, psm=6):
+        return self.words_result
 
 
 def make_profile():
@@ -43,6 +56,7 @@ def make_profile():
                     "regions": {
                         "password_dots": {"x": 330, "y": 1220, "w": 420, "h": 90},
                         "auto_save_toggle": {"x": 0, "y": 0, "w": 140, "h": 95},
+                        "account_label": {"x": 0, "y": 100, "w": 400, "h": 80},
                     },
                 },
                 "secure_number_keypad": {
@@ -187,6 +201,57 @@ class AccountPasswordPopupHandlerTests(unittest.TestCase):
         self.assertTrue(toggled)
         self.assertEqual(device.taps, [(920, 1510)])
 
+    def test_successful_input_confirms_popup_closed(self):
+        device = FakeDevice()
+        handler = AccountPasswordPopupHandler(
+            device,
+            make_profile(),
+            PensionConfig({"IRP": "1209"}),
+            ocr=FakeOcr(
+                [
+                    OcrResult("source.png", "kor+eng", "계좌 비밀번호 입력 자동저장", []),
+                    OcrResult("label.png", "kor+eng", "IRP 1234", []),
+                    OcrResult("after.png", "kor+eng", "매수 주문 화면", []),
+                ],
+                words_result=OcrResult("keypad.png", "kor+eng", "", self._keypad_words()),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "source.png"
+            self._write_full_source_image(image)
+
+            result = handler.handle(InformationContext(account="IRP"), image=image)
+
+        self.assertTrue(result.handled)
+        self.assertTrue(result.input_confirmed)
+        self.assertEqual(result.failure_count, 0)
+        self.assertEqual([tap for tap in device.taps[-5:]], [(135, 1673), (405, 1673), (405, 1983), (135, 1983), (810, 2125)])
+
+    def test_reports_failure_text_after_password_input(self):
+        device = FakeDevice()
+        handler = AccountPasswordPopupHandler(
+            device,
+            make_profile(),
+            PensionConfig({"IRP": "1209"}),
+            ocr=FakeOcr(
+                [
+                    OcrResult("source.png", "kor+eng", "계좌 비밀번호 입력 자동저장", []),
+                    OcrResult("label.png", "kor+eng", "IRP 1234", []),
+                    OcrResult("after.png", "kor+eng", "계좌 비밀번호 오류 다시 입력", []),
+                ],
+                words_result=OcrResult("keypad.png", "kor+eng", "", self._keypad_words()),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "source.png"
+            self._write_full_source_image(image)
+
+            result = handler.handle(InformationContext(account="IRP"), image=image)
+
+        self.assertFalse(result.handled)
+        self.assertEqual(result.reason, "account_password_input_failed")
+        self.assertGreater(result.failure_count, 0)
+
     @staticmethod
     def _write_toggle_image(path: Path, *, knob_left: bool, blue_track: bool) -> None:
         from PIL import Image, ImageDraw
@@ -198,6 +263,32 @@ class AccountPasswordPopupHandlerTests(unittest.TestCase):
         knob_x = 42 if knob_left else 98
         draw.ellipse((knob_x - 32, 16, knob_x + 32, 80), fill=(255, 255, 255))
         image.save(path)
+
+    @staticmethod
+    def _write_full_source_image(path: Path) -> None:
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (1080, 2340), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rounded_rectangle((10, 20, 130, 75), radius=28, fill=(70, 150, 240))
+        draw.ellipse((66, 16, 130, 80), fill=(255, 255, 255))
+        image.save(path)
+
+    @staticmethod
+    def _keypad_words() -> list[OcrWord]:
+        slots = [
+            ("1", 135, 78),
+            ("2", 405, 78),
+            ("3", 675, 78),
+            ("4", 945, 78),
+            ("5", 135, 232),
+            ("6", 405, 232),
+            ("7", 675, 232),
+            ("8", 945, 232),
+            ("9", 135, 388),
+            ("0", 405, 388),
+        ]
+        return [OcrWord(text, x - 10, y - 10, 20, 20, 95.0) for text, x, y in slots]
 
 
 if __name__ == "__main__":

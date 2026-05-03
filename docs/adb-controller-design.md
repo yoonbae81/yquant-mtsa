@@ -378,7 +378,7 @@ mtsa calibrate retirement-order
 mtsa check retirement-order
 mtsa tap retirement_order.account_password
 mtsa recover
-mtsa run retirement-order --dry-run
+mtsa run order --dry-run
 mtsa replay runs/20260503-143012
 ```
 

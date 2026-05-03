@@ -1,3 +1,5 @@
+default_profile: "src/pension/profiles/1080x2340"
+allow_real_run: false
 accounts:
   DC:
     password: "replace-me"

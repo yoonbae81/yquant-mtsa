@@ -17,7 +17,9 @@ def make_profile():
             "screens": {
                 "home": {
                     "tap_points": {"bottom_menu": {"x": 100, "y": 2160}},
-                    "regions": {},
+                    "regions": {
+                        "filled_results": {"x": 40, "y": 760, "w": 1000, "h": 1200},
+                    },
                     "anchors": [],
                 },
                 "menu": {
@@ -100,7 +102,7 @@ class InformationRouteTests(unittest.TestCase):
     def test_routes_are_information_names_not_account_specific_names(self):
         routes = InformationRouteRegistry().names()
 
-        self.assertEqual(routes, ["매도", "매수", "보유종목", "예수금"])
+        self.assertEqual(routes, ["매도", "매수", "보유종목", "예수금", "체결결과"])
 
     def test_sitemap_groups_tabs_under_each_screen(self):
         self.assertEqual(
@@ -224,6 +226,18 @@ class InformationRouteTests(unittest.TestCase):
         self.assertEqual(sell_context.current_screen, "주문")
         self.assertEqual(sell_context.account, "IRP")
         self.assertEqual(sell_context.tab, "매도")
+
+    def test_filled_result_route_reads_order_filled_tab(self):
+        steps = InformationRouteRegistry().plan(
+            "체결결과",
+            account="IRP",
+            context=InformationContext(current_screen="주문", account="IRP", tab="매수"),
+        )
+
+        self.assertEqual(
+            [step.profile_key for step in steps if step.profile_key],
+            ["order.filled", "order.filled_results"],
+        )
 
     def test_plan_skips_already_satisfied_state(self):
         context = InformationContext(

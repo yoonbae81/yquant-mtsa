@@ -19,6 +19,12 @@ make setup
 make check-env
 ```
 
+`config.yaml`에 기본 profile을 지정하면 `--profile`을 생략할 수 있습니다.
+
+```yaml
+default_profile: "src/pension/profiles/1080x2340"
+```
+
 ## 사용 예
 
 ```bash
@@ -39,10 +45,10 @@ make check-env
 ./scripts/profile --profile src/pension/profiles/1080x2340 detect-recovery --image screenshots/20260503-current.png
 
 ./scripts/run login
-./scripts/run --profile src/pension/profiles/1080x2340 validate-scenario open-balance
-./scripts/run --profile src/pension/profiles/1080x2340 validate-scenario open-order
-./scripts/run --profile src/pension/profiles/1080x2340 open-order
-./scripts/run --profile src/pension/profiles/1080x2340 select-account DC
+./scripts/run validate-scenario open-balance
+./scripts/run validate-scenario open-order
+./scripts/run open-order
+./scripts/run select-account DC
 ./scripts/run verify-balance --text "IRP 1234 TIGER 미국S&P500 10주 평가금액 100000" --account-type IRP --account-hint 1234 --symbol-name "TIGER 미국S&P500" --min-quantity 10
 ./scripts/run verify-order --text "DC 9999 KODEX 미국나스닥100 매수 수량 3 금액 45000" --account-type DC --account-hint 9999 --symbol-name "KODEX 미국나스닥100" --side 매수 --quantity 3 --amount 45000
 ```

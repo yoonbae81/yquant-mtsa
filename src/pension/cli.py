@@ -11,9 +11,10 @@ from .login_bridge import LoginBridge
 from .adb_device import AdbDevice
 from .device_profile import DeviceProfile, Region
 from .keypad import RandomNumericKeypadMapper
-from .holdings_grid import BalanceHoldingsGridParser, load_ocr_json
+from .holdings_grid import BalanceHoldingsGridParser, HoldingRow, load_ocr_json, merge_holding_rows
 from .holdings_service import HoldingsTickerResolver
 from .ocr import TesseractOcr
+from .order_executor import OrderExecutor, OrderRequest, normalize_order_side
 from .recovery import RecoveryDetector
 from .routes import InformationContext, InformationRouteRegistry, RouteStep
 from .run_artifacts import RunArtifacts
@@ -178,7 +179,25 @@ def build_parser() -> argparse.ArgumentParser:
     holdings.add_argument("--account", choices=["IRP", "DC", "irp", "dc"], required=True)
     holdings.add_argument("--ticker-cache", default=str(DEFAULT_TICKER_CACHE_PATH))
     holdings.add_argument("--no-resolve-missing-tickers", action="store_true")
+    holdings.add_argument("--max-pages", type=int, default=8, help="maximum vertical balance-grid pages to scan")
     holdings.add_argument("--psm", type=int, default=6)
+
+    order = subparsers.add_parser(
+        "order",
+        help="place or dry-run an ETF/REIT market order and optionally read filled results",
+    )
+    order.add_argument("--account", choices=["IRP", "DC", "irp", "dc"], required=True)
+    order.add_argument("--side", choices=["buy", "sell", "매수", "매도"], required=True)
+    order.add_argument("--symbol-code", default=None)
+    order.add_argument("--symbol-name", default=None)
+    order.add_argument("--quantity", type=int, required=True)
+    order.add_argument("--mode", choices=["inspect", "dry-run", "confirm-run", "real-run"], default="dry-run")
+    order.add_argument("--explicit-real-run", action="store_true")
+    order.add_argument("--no-read-filled-results", action="store_true")
+    order.add_argument("--psm", type=int, default=6)
+
+    filled_results = subparsers.add_parser("order-filled-results", help="read the order filled-results tab")
+    filled_results.add_argument("--account", choices=["IRP", "DC", "irp", "dc"], default=None)
 
     subparsers.add_parser("list-info-routes", help="list Korean information route names")
     plan_info_route = subparsers.add_parser("plan-info-route", help="print an information route plan")
@@ -321,9 +340,87 @@ def _execute_holdings_route(
     return registry.context_after("보유종목", account=account, context=context)
 
 
+def _capture_holdings_page(
+    *,
+    device: AdbDevice,
+    profile: DeviceProfile,
+    capture: ScreenCapture,
+    ocr: TesseractOcr,
+    artifacts: RunArtifacts,
+    page: int,
+    psm: int,
+) -> list[HoldingRow]:
+    page_label = f"holdings-page-{page:02d}"
+    left_image = artifacts.next_path(f"{page_label}-left-source", ext="png")
+    left_crop = artifacts.next_path(f"{page_label}-left-grid", ext="png")
+    left_json = artifacts.next_path(f"{page_label}-left-grid", ext="json")
+    capture.capture(left_image)
+    capture.crop(left_image, profile.region("balance.holdings_grid"), left_crop)
+    left_ocr = ocr.recognize(left_image, psm=psm)
+    left_ocr.save_json(left_json)
+
+    scroll_right = profile.swipe("balance.scroll_grid_right")
+    device.swipe(scroll_right.x1, scroll_right.y1, scroll_right.x2, scroll_right.y2, scroll_right.duration_ms)
+    time.sleep(profile.post_delay_ms("balance.scroll_grid_right") / 1000)
+
+    right_image = artifacts.next_path(f"{page_label}-right-source", ext="png")
+    right_crop = artifacts.next_path(f"{page_label}-right-grid", ext="png")
+    right_json = artifacts.next_path(f"{page_label}-right-grid", ext="json")
+    capture.capture(right_image)
+    capture.crop(right_image, profile.region("balance.holdings_grid"), right_crop)
+    right_ocr = ocr.recognize(right_image, psm=psm)
+    right_ocr.save_json(right_json)
+
+    scroll_left = profile.swipe("balance.scroll_grid_left")
+    device.swipe(scroll_left.x1, scroll_left.y1, scroll_left.x2, scroll_left.y2, scroll_left.duration_ms)
+    time.sleep(profile.post_delay_ms("balance.scroll_grid_left") / 1000)
+
+    return BalanceHoldingsGridParser().parse(left_ocr, right_ocr)
+
+
+def _read_holdings_rows(
+    *,
+    device: AdbDevice,
+    profile: DeviceProfile,
+    capture: ScreenCapture,
+    ocr: TesseractOcr,
+    artifacts: RunArtifacts,
+    ticker_resolver: HoldingsTickerResolver | None,
+    max_pages: int,
+    psm: int,
+) -> list[HoldingRow]:
+    all_rows: list[HoldingRow] = []
+    seen_names: set[str] = set()
+    page_count = max(1, max_pages)
+    for page in range(1, page_count + 1):
+        page_rows = _capture_holdings_page(
+            device=device,
+            profile=profile,
+            capture=capture,
+            ocr=ocr,
+            artifacts=artifacts,
+            page=page,
+            psm=psm,
+        )
+        new_rows = [row for row in page_rows if row.name not in seen_names]
+        if ticker_resolver is not None:
+            ticker_resolver.enrich(new_rows)
+        all_rows.extend(page_rows)
+        seen_names.update(row.name for row in page_rows)
+        if not page_rows or not new_rows:
+            break
+        if page == page_count:
+            break
+        scroll_down = profile.swipe("balance.scroll_grid_down")
+        device.swipe(scroll_down.x1, scroll_down.y1, scroll_down.x2, scroll_down.y2, scroll_down.duration_ms)
+        time.sleep(profile.post_delay_ms("balance.scroll_grid_down") / 1000)
+    return merge_holding_rows(all_rows)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    profile = DeviceProfile.load(args.profile) if args.profile else None
+    profile_path = args.profile or _default_profile_from_config(args.config)
+    profile = DeviceProfile.load(profile_path) if profile_path else None
     serial = args.serial or (profile.serial if profile else None)
     device = AdbDevice(serial=serial, adb_path=args.adb)
 
@@ -654,39 +751,77 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"account": account, "error": str(exc), "holdings": []}, indent=2, ensure_ascii=False))
             return 2
 
-        left_image = artifacts.next_path("holdings-left-source", ext="png")
-        left_crop = artifacts.next_path("holdings-left-grid", ext="png")
-        left_json = artifacts.next_path("holdings-left-grid", ext="json")
-        capture.capture(left_image)
-        capture.crop(left_image, profile.region("balance.holdings_grid"), left_crop)
-        left_ocr = ocr.recognize(left_image, psm=args.psm)
-        left_ocr.save_json(left_json)
-
-        left_rows = BalanceHoldingsGridParser().parse(left_ocr, left_ocr)
         cache = HoldingTickerCache(args.ticker_cache)
-        resolver = HoldingsTickerResolver(
-            cache,
-            device=device if not args.no_resolve_missing_tickers else None,
-            profile=profile if not args.no_resolve_missing_tickers else None,
-            capture=capture if not args.no_resolve_missing_tickers else None,
+        page_ticker_resolver = None
+        if not args.no_resolve_missing_tickers:
+            page_ticker_resolver = HoldingsTickerResolver(
+                cache,
+                device=device,
+                profile=profile,
+                capture=capture,
+                ocr=ocr,
+            )
+        rows = _read_holdings_rows(
+            device=device,
+            profile=profile,
+            capture=capture,
             ocr=ocr,
+            artifacts=artifacts,
+            ticker_resolver=page_ticker_resolver,
+            max_pages=args.max_pages,
+            psm=args.psm,
         )
-        resolver.enrich(left_rows)
-
-        scroll = profile.swipe("balance.scroll_grid_right")
-        device.swipe(scroll.x1, scroll.y1, scroll.x2, scroll.y2, scroll.duration_ms)
-        right_image = artifacts.next_path("holdings-right-source", ext="png")
-        right_crop = artifacts.next_path("holdings-right-grid", ext="png")
-        right_json = artifacts.next_path("holdings-right-grid", ext="json")
-        capture.capture(right_image)
-        capture.crop(right_image, profile.region("balance.holdings_grid"), right_crop)
-        right_ocr = ocr.recognize(right_image, psm=args.psm)
-        right_ocr.save_json(right_json)
-
-        rows = BalanceHoldingsGridParser().parse(left_ocr, right_ocr)
-        holdings = HoldingsTickerResolver(cache).enrich(rows)
+        cache_only_resolver = HoldingsTickerResolver(cache)
+        holdings = cache_only_resolver.enrich(rows)
+        missing_tickers = cache_only_resolver.missing_ticker_names(rows)
+        if missing_tickers and not args.no_resolve_missing_tickers:
+            print(
+                json.dumps(
+                    {
+                        "account": account,
+                        "error": "ticker cache is incomplete",
+                        "missing_tickers": missing_tickers,
+                        "holdings": [row.to_dict() for row in holdings],
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
+            return 2
         print(json.dumps({"account": account, "holdings": [row.to_dict() for row in holdings]}, indent=2, ensure_ascii=False))
         return 0 if rows else 2
+
+    if args.command == "order":
+        if profile is None:
+            raise SystemExit("--profile is required for order")
+        config_path = Path(args.config)
+        if not config_path.exists():
+            raise SystemExit(f"{args.config} is required for order")
+        if not args.symbol_code and not args.symbol_name:
+            raise SystemExit("--symbol-code or --symbol-name is required")
+        result = OrderExecutor(device, profile, PensionConfig.load(config_path)).execute(
+            OrderRequest(
+                account=args.account.upper(),
+                side=normalize_order_side(args.side),
+                symbol_code=args.symbol_code,
+                symbol_name=args.symbol_name,
+                quantity=args.quantity,
+                mode=args.mode,
+                explicit_real_run=args.explicit_real_run,
+                read_filled_results=not args.no_read_filled_results,
+                psm=args.psm,
+            )
+        )
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return 0 if result.verified else 2
+
+    if args.command == "order-filled-results":
+        if profile is None:
+            raise SystemExit("--profile is required for order-filled-results")
+        context = InformationContext(current_screen="주문", account=args.account.upper() if args.account else None)
+        text = OrderExecutor(device, profile, PensionConfig({}, default_profile=profile_path)).read_filled_results(context)
+        print(text)
+        return 0 if text.strip() else 2
 
     if args.command == "list-info-routes":
         print(json.dumps({"routes": InformationRouteRegistry().names()}, indent=2, ensure_ascii=False))
@@ -737,7 +872,7 @@ def main(argv: list[str] | None = None) -> int:
         if profile is None:
             raise SystemExit("--profile is required for validate")
         errors = profile.validate()
-        payload = {"profile": args.profile, "valid": not errors, "errors": errors}
+        payload = {"profile": str(profile.source_path or profile_path), "valid": not errors, "errors": errors}
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0 if not errors else 2
 
@@ -777,6 +912,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     raise SystemExit(f"Unknown command: {args.command}")
+
+
+def _default_profile_from_config(config_path: str | Path) -> str | None:
+    path = Path(config_path)
+    if not path.exists():
+        return None
+    return PensionConfig.load(path).default_profile
 
 
 if __name__ == "__main__":

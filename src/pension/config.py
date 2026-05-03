@@ -7,10 +7,17 @@ from pathlib import Path
 @dataclass(frozen=True)
 class PensionConfig:
     account_passwords: dict[str, str]
+    default_profile: str | None = None
+    allow_real_run: bool = False
 
     @classmethod
     def load(cls, path: str | Path) -> "PensionConfig":
-        return cls(account_passwords=parse_account_passwords(Path(path).read_text(encoding="utf-8")))
+        text = Path(path).read_text(encoding="utf-8")
+        return cls(
+            account_passwords=parse_account_passwords(text),
+            default_profile=parse_default_profile(text),
+            allow_real_run=parse_allow_real_run(text),
+        )
 
     def password_for_account(self, account: str | None) -> str | None:
         if account is None:
@@ -44,6 +51,28 @@ def parse_account_passwords(text: str) -> dict[str, str]:
             accounts[current_account] = _unquote(value)
 
     return accounts
+
+
+def parse_default_profile(text: str) -> str | None:
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line.startswith("default_profile:"):
+            continue
+        value = line.split(":", 1)[1].strip()
+        if not value:
+            return None
+        return _unquote(value)
+    return None
+
+
+def parse_allow_real_run(text: str) -> bool:
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line.startswith("allow_real_run:"):
+            continue
+        value = _unquote(line.split(":", 1)[1].strip()).strip().lower()
+        return value in {"1", "true", "yes", "y", "on"}
+    return False
 
 
 def _unquote(value: str) -> str:

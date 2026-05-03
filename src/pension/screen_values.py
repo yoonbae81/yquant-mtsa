@@ -39,6 +39,7 @@ class ExpectedOrder:
     side: str | None = None
     quantity: int | None = None
     amount: int | None = None
+    price_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,8 @@ def verify_order_text(text: str, expected: ExpectedOrder) -> VerificationResult:
     if expected.amount is not None:
         amount = str(expected.amount)
         checks.append((f"amount:{expected.amount}", amount in re.sub(r"[^0-9]", "", text)))
+    if expected.price_type:
+        checks.append((f"price_type:{expected.price_type}", normalize_text(expected.price_type) in normalized))
     return _result("order", checks)
 
 

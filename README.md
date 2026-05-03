@@ -65,10 +65,10 @@
    - [x] 계좌 비밀번호 팝업 감지 이벤트 핸들러 구현
    - [x] known state의 IRP/DC 계좌 기준으로 계좌 비밀번호 선택
    - [x] 계좌 비밀번호 입력 루틴 구현
-   - [ ] 계좌 비밀번호 팝업 열기
-   - [ ] 계좌번호/계좌유형/계좌 비밀번호 입력 상태 확인
-   - [ ] 저장 옵션과 입력 완료 상태 확인
-   - [ ] 실패/오류 횟수 감지
+   - [x] 계좌 비밀번호 팝업 열기
+   - [x] 계좌유형 충돌/계좌 비밀번호 입력 상태 확인
+   - [x] 저장 옵션과 입력 완료 상태 확인
+   - [x] 실패/오류 횟수 감지
    - [x] 종목 검색 버튼 tap point를 profile에 저장
    - [x] 종목 검색/선택 및 종목명/종목코드 검증
    - [x] 매수/매도 탭 tap point를 profile에 저장
@@ -198,11 +198,12 @@ CLI 기준 예시는 다음과 같습니다.
 ./scripts/run --profile src/pension/profiles/1080x2340 validate-info-route 예수금 --account DC
 ./scripts/run --profile src/pension/profiles/1080x2340 plan-info-route 매수 --account IRP
 ./scripts/run --profile src/pension/profiles/1080x2340 plan-info-route 매도 --account DC
-./scripts/run --profile src/pension/profiles/1080x2340 holdings --account IRP
+./scripts/run --profile src/pension/profiles/1080x2340 holdings --account IRP --max-pages 8
+./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml order --account IRP --side buy --symbol-code 360750 --quantity 1 --mode dry-run
 ./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml handle-account-password-popup --state-json runs/current-state.json --json runs/account-password-event.json
 ```
 
-보유종목 ticker 캐시는 기본적으로 `state/holding-tickers.tsv`에 저장합니다. 형식은 종목명과 ticker 두 칸만 사용합니다.
+보유종목 조회는 보이는 그리드를 좌우로 읽고, 필요하면 세로로 스크롤하며 `--max-pages` 한도까지 반복합니다. ticker 캐시는 기본적으로 `state/holding-tickers.tsv`에 저장합니다. 형식은 종목명과 ticker 두 칸만 사용합니다. 기본 실행에서는 cache miss 종목을 같은 페이지에서 탭해 상세 화면 ticker를 확보한 뒤 TSV에 저장하고, 끝까지 확보하지 못한 ticker가 있으면 성공 응답 대신 `ticker cache is incomplete` 오류로 중단합니다. `--no-resolve-missing-tickers`는 진단용으로만 사용합니다.
 
 ```tsv
 TIGER 미국S&P500	360750

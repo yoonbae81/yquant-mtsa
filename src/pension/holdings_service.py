@@ -61,7 +61,7 @@ class HoldingsTickerResolver:
                     cache_updated = True
             outputs.append(
                 HoldingOutput(
-                    ticker=ticker,
+            ticker=ticker,
                     name=row.name,
                     qty=row.quantity,
                     avg_price=row.average_price,
@@ -70,6 +70,9 @@ class HoldingsTickerResolver:
         if cache_updated:
             self.cache.save()
         return outputs
+
+    def missing_ticker_names(self, rows: list[HoldingRow]) -> list[str]:
+        return [row.name for row in rows if self.cache.get(row.name) is None]
 
     def _discover_ticker(self, row: HoldingRow) -> str | None:
         if self.device is None or self.profile is None or self.capture is None:
@@ -86,11 +89,16 @@ class HoldingsTickerResolver:
         time.sleep(1.5)
         source = Path("runs/holding-detail-source.png")
         crop = Path("runs/holding-detail-header.png")
-        try:
-            self.capture.capture(source)
-            self.capture.crop(source, header_region, crop)
-            result = self.ocr.recognize(crop, psm=6)
-            return extract_ticker(result.text)
-        finally:
+        self.capture.capture(source)
+        self.capture.crop(source, header_region, crop)
+        result = self.ocr.recognize(crop, psm=6)
+        ticker = extract_ticker(result.text)
+        if ticker is not None or _looks_like_holding_detail(result.text):
             self.device.tap(back.x, back.y)
             time.sleep(1.0)
+        return ticker
+
+
+def _looks_like_holding_detail(text: str) -> bool:
+    compact = "".join(text.split()).casefold()
+    return any(anchor.casefold() in compact for anchor in ("ETF", "투자한도", "현재가", "주문"))

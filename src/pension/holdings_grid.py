@@ -40,6 +40,25 @@ def load_ocr_json(path: str | Path) -> OcrResult:
     )
 
 
+def merge_holding_rows(rows: list[HoldingRow]) -> list[HoldingRow]:
+    merged: dict[str, HoldingRow] = {}
+    for row in rows:
+        if not row.name:
+            continue
+        previous = merged.get(row.name)
+        if previous is None:
+            merged[row.name] = row
+            continue
+        merged[row.name] = HoldingRow(
+            name=row.name,
+            quantity=row.quantity if row.quantity is not None else previous.quantity,
+            average_price=row.average_price if row.average_price is not None else previous.average_price,
+            tap_x=row.tap_x if row.tap_x is not None else previous.tap_x,
+            tap_y=row.tap_y if row.tap_y is not None else previous.tap_y,
+        )
+    return list(merged.values())
+
+
 class BalanceHoldingsGridParser:
     """Parse the portrait balance grid from paired horizontal scroll captures."""
 
@@ -72,7 +91,7 @@ class BalanceHoldingsGridParser:
                         "name": name,
                         "quantity": quantity,
                         "tap_x": 145,
-                        "tap_y": (top + bottom) // 2,
+                        "tap_y": top + 45,
                     }
                 )
         return rows

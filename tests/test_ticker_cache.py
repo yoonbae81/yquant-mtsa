@@ -48,6 +48,20 @@ class HoldingTickerCacheTests(unittest.TestCase):
                 ],
             )
 
+    def test_resolver_reports_missing_tickers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "holding-tickers.tsv"
+            path.write_text("TIGER 미국S&P500\t360750\n", encoding="utf-8")
+            cache = HoldingTickerCache(path)
+            rows = [
+                HoldingRow(name="TIGER미국S&P500", quantity=5, average_price=10000),
+                HoldingRow(name="새종목", quantity=2, average_price=3000),
+            ]
+
+            missing = HoldingsTickerResolver(cache).missing_ticker_names(rows)
+
+            self.assertEqual(missing, ["새종목"])
+
     def test_extract_ticker_requires_digit(self):
         self.assertEqual(extract_ticker("ACE 미국30년 0162Z0 현재가"), "0162Z0")
         self.assertEqual(extract_ticker("TIGER 471230 ETF"), "471230")
