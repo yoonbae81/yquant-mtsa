@@ -76,8 +76,8 @@
    - [x] 주문 수량 입력 영역 tap point를 profile에 저장
    - [x] 수량 입력 및 반영 확인
    - [x] 주문 버튼 탭 전 최종 주문 정보 검증
-   - [ ] 주문 버튼 탭 후 확인 팝업 감지
-   - [ ] 주문 확인 팝업에서 계좌, 종목, 매수/매도, 수량, 금액 재검증
+   - [x] 주문 버튼 탭 후 확인 팝업 감지
+   - [x] 주문 확인 팝업에서 계좌, 종목, 매수/매도, 수량, 금액 재검증
    - [x] `inspect`, `dry-run`, `confirm-run`, `real-run` 실행 모드 제공
    - [x] `dry-run`에서는 최종 주문 직전 중단
    - [x] `confirm-run`에서는 사용자 승인 후 진행 여부 결정
@@ -199,7 +199,7 @@ CLI 기준 예시는 다음과 같습니다.
 ./scripts/run --profile src/pension/profiles/1080x2340 plan-info-route 매수 --account IRP
 ./scripts/run --profile src/pension/profiles/1080x2340 plan-info-route 매도 --account DC
 ./scripts/run --profile src/pension/profiles/1080x2340 holdings --account IRP --max-pages 8
-./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml order --account IRP --side buy --symbol-code 360750 --quantity 1 --mode dry-run
+./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml order --account IRP --side buy --symbol-code 360750 --quantity 1 --expected-amount 45000 --mode dry-run
 ./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml handle-account-password-popup --state-json runs/current-state.json --json runs/account-password-event.json
 ```
 

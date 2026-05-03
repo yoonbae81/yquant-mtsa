@@ -15,6 +15,7 @@ from .routes import InformationContext, InformationRouteRegistry, RouteStep
 from .run_artifacts import RunArtifacts
 from .run_modes import decide_submit_permission
 from .screen_capture import ScreenCapture
+from .screen_state import ScreenStateChecker
 from .screen_values import ExpectedOrder, verify_order_text
 
 
@@ -25,6 +26,7 @@ class OrderRequest:
     quantity: int
     symbol_code: str | None = None
     symbol_name: str | None = None
+    expected_amount: int | None = None
     mode: str = "dry-run"
     explicit_real_run: bool = False
     read_filled_results: bool = True
@@ -63,6 +65,7 @@ class OrderExecutionResult:
                 "quantity": self.request.quantity,
                 "symbol_code": self.request.symbol_code,
                 "symbol_name": self.request.symbol_name,
+                "expected_amount": self.request.expected_amount,
                 "mode": self.request.mode,
                 "read_filled_results": self.request.read_filled_results,
             },
@@ -142,7 +145,7 @@ class OrderExecutor:
 
         if decision.may_tap_submit:
             self._tap_profile_point("order.submit")
-            confirmation_verification = self._verify_current_order(request, label="order-confirm")
+            confirmation_verification = self._verify_confirmation_popup(request)
             confirmation_verified = confirmation_verification["passed"]
             if not confirmation_verified:
                 decision_payload = {**decision.to_dict(), "blocked_after_submit": "confirmation_verification_failed"}
@@ -271,9 +274,54 @@ class OrderExecutor:
                 symbol_name=request.symbol_name,
                 side=request.route_name,
                 quantity=request.quantity,
+                amount=request.expected_amount,
                 price_type="시장가",
             ),
         ).to_dict()
+        decision_json.write_text(json.dumps(verification, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return verification
+
+    def _verify_confirmation_popup(self, request: OrderRequest) -> dict:
+        image = self.artifacts.next_path("order-confirm-source", ext="png")
+        screen_ocr_json = self.artifacts.next_path("order-confirm-screen", ext="json")
+        crop = self.artifacts.next_path("order-confirm-summary", ext="png")
+        summary_ocr_json = self.artifacts.next_path("order-confirm-summary", ext="json")
+        decision_json = self.artifacts.next_path("order-confirm-verification", ext="json")
+
+        self.capture.capture(image)
+        screen_ocr = self.ocr.recognize(image, psm=request.psm)
+        screen_ocr.save_json(screen_ocr_json)
+        anchor_check = ScreenStateChecker().check_anchors(
+            "order_confirm",
+            self.profile.anchors("order_confirm"),
+            screen_ocr,
+        )
+
+        self.capture.crop(image, self.profile.region("order_confirm.summary"), crop)
+        summary_ocr = self.ocr.recognize(crop, psm=request.psm)
+        summary_ocr.save_json(summary_ocr_json)
+        summary_verification = verify_order_text(
+            summary_ocr.text,
+            ExpectedOrder(
+                account_type=request.account,
+                symbol_code=request.symbol_code,
+                symbol_name=request.symbol_name,
+                side=request.route_name,
+                quantity=request.quantity,
+                amount=request.expected_amount,
+                price_type="시장가",
+            ),
+        ).to_dict()
+        verification = {
+            "target": "order_confirm",
+            "passed": anchor_check.passed and summary_verification["passed"],
+            "anchor_check": anchor_check.to_dict(),
+            "summary_verification": summary_verification,
+            "source_image": str(image),
+            "summary_crop": str(crop),
+            "screen_ocr_json": str(screen_ocr_json),
+            "summary_ocr_json": str(summary_ocr_json),
+        }
         decision_json.write_text(json.dumps(verification, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         return verification
 

@@ -191,6 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
     order.add_argument("--symbol-code", default=None)
     order.add_argument("--symbol-name", default=None)
     order.add_argument("--quantity", type=int, required=True)
+    order.add_argument("--expected-amount", type=int, default=None)
     order.add_argument("--mode", choices=["inspect", "dry-run", "confirm-run", "real-run"], default="dry-run")
     order.add_argument("--explicit-real-run", action="store_true")
     order.add_argument("--no-read-filled-results", action="store_true")
@@ -805,6 +806,7 @@ def main(argv: list[str] | None = None) -> int:
                 side=normalize_order_side(args.side),
                 symbol_code=args.symbol_code,
                 symbol_name=args.symbol_name,
+                expected_amount=args.expected_amount,
                 quantity=args.quantity,
                 mode=args.mode,
                 explicit_real_run=args.explicit_real_run,
@@ -813,7 +815,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
-        return 0 if result.verified else 2
+        confirmation_required = bool(result.decision.get("may_tap_submit"))
+        return 0 if result.verified and (not confirmation_required or result.confirmation_verified) else 2
 
     if args.command == "order-filled-results":
         if profile is None:

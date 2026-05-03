@@ -18,10 +18,13 @@ class CliParserTests(unittest.TestCase):
                 "360750",
                 "--quantity",
                 "1",
+                "--expected-amount",
+                "45000",
             ]
         )
 
         self.assertEqual(args.command, "order")
+        self.assertEqual(args.expected_amount, 45000)
 
     def test_retirement_order_command_is_not_registered(self):
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
