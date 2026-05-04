@@ -375,6 +375,18 @@ class OrderExecutorQuantityTests(unittest.TestCase):
         with self.assertRaisesRegex(MtsLoginRequiredError, "login activity"):
             executor._require_current_screen("주문", label="before-account-password-event")
 
+    def test_screen_requirement_treats_blocked_screenshot_as_login_required(self):
+        executor = OrderExecutor(
+            FakeDevice(),
+            make_profile(),
+            PensionConfig({}),
+            capture=FakeCapture(fail_count=1),
+            ocr=FakeOcr(""),
+        )
+
+        with self.assertRaisesRegex(MtsLoginRequiredError, "blocking screenshots"):
+            executor._require_current_screen("주문", label="before-account-password-event")
+
     def test_login_recovery_calls_helper_and_retries_route(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             device = FakeDevice()

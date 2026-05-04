@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .adb_device import AdbDevice
+from .adb_device import AdbCommandError, AdbDevice
 from .config import PensionConfig
 from .device_profile import DeviceProfile
 from .events import AccountPasswordPopupHandler
@@ -230,7 +230,12 @@ class OrderExecutor:
                 time.sleep(interval_seconds)
                 continue
 
-            payload = self._inspect_current_state_payload(label="post-login")
+            try:
+                payload = self._inspect_current_state_payload(label="post-login")
+            except MtsLoginRequiredError as exc:
+                attempts.append({"ready": False, "reason": str(exc)})
+                time.sleep(interval_seconds)
+                continue
             if payload is not None:
                 attempts.append(
                     {
@@ -331,8 +336,17 @@ class OrderExecutor:
             state_json.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             return payload
         except Exception as exc:
+            if self._is_blocked_screenshot_error(exc):
+                raise MtsLoginRequiredError(f"MTS screen is blocking screenshots: {exc}") from exc
             self.artifacts.write_json("route-start-inspect-failed", {"error": str(exc)})
         return None
+
+    @staticmethod
+    def _is_blocked_screenshot_error(exc: Exception) -> bool:
+        message = str(exc).casefold()
+        if isinstance(exc, AdbCommandError):
+            return "screencap returned no data" in message or "block screenshots" in message
+        return "blocked screenshot" in message or "screencap returned no data" in message
 
     def _select_symbol(self, request: OrderRequest) -> None:
         self._tap_profile_point("order.add_product")
