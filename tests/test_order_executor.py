@@ -299,6 +299,20 @@ class OrderExecutorQuantityTests(unittest.TestCase):
         self.assertEqual(device.back_count, 1)
         self.assertEqual(context.current_screen, "홈")
 
+    def test_requires_order_screen_before_symbol_input(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = OrderExecutor(
+                FakeDevice(),
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr("통합검색 최근 검색어"),
+                artifacts=RunArtifacts(temp_dir, run_id="not-order-screen"),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "expected 주문 screen"):
+                executor._require_current_screen("주문", label="order-route-complete")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -125,6 +125,7 @@ class OrderExecutor:
         self._ensure_not_login_activity()
         account = request.account.strip().upper()
         context = self._open_order_route(request.route_name, account)
+        self._require_current_screen("주문", label="order-route-complete")
         self._select_symbol(request)
         self._select_market_price()
         quantity_result = self._input_quantity(request.quantity, psm=request.psm)
@@ -219,6 +220,12 @@ class OrderExecutor:
             self._delay_for_step(step)
         return registry.context_after(route_name, account=account, context=context)
 
+    def _require_current_screen(self, expected_screen: str, *, label: str) -> None:
+        payload = self._inspect_current_state_payload(label=label)
+        current_screen = payload.get("current_screen") if payload else None
+        if current_screen != expected_screen:
+            raise RuntimeError(f"expected {expected_screen} screen, got {current_screen or 'UNKNOWN'}")
+
     def _ensure_not_login_activity(self) -> None:
         if not hasattr(self.device, "get_current_activity"):
             return
@@ -247,10 +254,10 @@ class OrderExecutor:
                 time.sleep(1)
         return InformationContext()
 
-    def _inspect_current_state_payload(self) -> dict | None:
+    def _inspect_current_state_payload(self, *, label: str = "route-start") -> dict | None:
         try:
-            image = self.artifacts.next_path("route-start-source", ext="png")
-            state_json = self.artifacts.next_path("route-start-state", ext="json")
+            image = self.artifacts.next_path(f"{label}-source", ext="png")
+            state_json = self.artifacts.next_path(f"{label}-state", ext="json")
             self.capture.capture(image)
             result = self.ocr.recognize(image, psm=6)
             snapshot = ScreenStateChecker().inspect(self.profile, result)
