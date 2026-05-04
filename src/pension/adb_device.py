@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -200,14 +201,43 @@ class AdbDevice:
         result = self.run(["exec-out", "screencap", "-p"], timeout=timeout)
         assert isinstance(result, AdbResult)
         if not result.stdout:
+            return self._screencap_via_device_file(output, timeout=timeout, original_result=result)
+        output.write_bytes(result.stdout)
+        return output
+
+    def _screencap_via_device_file(
+        self,
+        output: Path,
+        *,
+        timeout: float,
+        original_result: AdbResult,
+    ) -> Path:
+        remote = f"/sdcard/yquant-mtsa-screencap-{int(time.time() * 1000)}.png"
+        try:
+            self.run(["shell", "screencap", "-p", remote], timeout=timeout, check=False)
+            self.run(["pull", remote, str(output)], timeout=timeout)
+        except AdbCommandError as exc:
+            raise AdbCommandError(
+                "ADB screencap returned no data and device-file fallback failed.",
+                command=original_result.command,
+                returncode=original_result.returncode,
+                stdout=original_result.stdout,
+                stderr=original_result.stderr,
+            ) from exc
+        finally:
+            try:
+                self.run(["shell", "rm", "-f", remote], timeout=timeout, check=False)
+            except AdbCommandError:
+                pass
+
+        if not output.exists() or output.stat().st_size == 0:
             raise AdbCommandError(
                 "ADB screencap returned no data. The screen may be off or the current activity may block screenshots.",
-                command=result.command,
-                returncode=result.returncode,
-                stdout=result.stdout,
-                stderr=result.stderr,
+                command=original_result.command,
+                returncode=original_result.returncode,
+                stdout=original_result.stdout,
+                stderr=original_result.stderr,
             )
-        output.write_bytes(result.stdout)
         return output
 
     def tap(self, x: int | float, y: int | float) -> None:

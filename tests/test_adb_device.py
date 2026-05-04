@@ -86,6 +86,33 @@ class AdbDeviceTests(unittest.TestCase):
                 device.screencap(output)
             self.assertFalse(output.exists())
 
+    def test_screencap_falls_back_to_device_file_when_exec_out_is_empty(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "screen.png"
+            device = AdbDevice(adb_path="/tmp/adb")
+            calls = []
+
+            def fake_run(args, **kwargs):
+                calls.append(args)
+                if args[:3] == ["exec-out", "screencap", "-p"]:
+                    return AdbResult(["adb", *args], 0, b"", b"")
+                if args[:2] == ["shell", "screencap"]:
+                    self.assertFalse(kwargs.get("check", True))
+                    return AdbResult(["adb", *args], 0, b"", b"")
+                if args[0] == "pull":
+                    output.write_bytes(b"png")
+                    return AdbResult(["adb", *args], 0, b"", b"")
+                return AdbResult(["adb", *args], 0, b"", b"")
+
+            device.run = fake_run
+
+            self.assertEqual(device.screencap(output), output)
+            self.assertEqual(output.read_bytes(), b"png")
+            self.assertEqual(calls[0], ["exec-out", "screencap", "-p"])
+            self.assertEqual(calls[1][:3], ["shell", "screencap", "-p"])
+            self.assertEqual(calls[2][0], "pull")
+            self.assertEqual(calls[3][:3], ["shell", "rm", "-f"])
+
 
 if __name__ == "__main__":
     unittest.main()
