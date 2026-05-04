@@ -9,6 +9,7 @@ from pension.device_profile import DeviceProfile
 from pension.ocr import OcrResult
 from pension.order_executor import OrderExecutor, OrderRequest, quantity_text_matches
 from pension.run_artifacts import RunArtifacts
+from pension.run_modes import decide_submit_permission
 
 
 class FakeDevice:
@@ -60,6 +61,7 @@ def make_profile():
             "screens": {
                 "order": {
                     "tap_points": {
+                        "submit": {"x": 740, "y": 1985, "post_delay_ms": 0},
                         "quantity_input": {"x": 740, "y": 1295, "post_delay_ms": 0},
                     },
                     "regions": {
@@ -75,6 +77,7 @@ def make_profile():
                     },
                     "tap_points": {
                         "submit": {"x": 810, "y": 1985},
+                        "cancel": {"x": 270, "y": 1985},
                     },
                     "regions": {
                         "summary": {"x": 60, "y": 760, "w": 960, "h": 920},
@@ -178,6 +181,35 @@ class OrderExecutorQuantityTests(unittest.TestCase):
 
         self.assertFalse(result["passed"])
         self.assertIn("quantity:3", result["summary_verification"]["missing"])
+
+    def test_confirm_run_cancels_after_verified_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(
+                    [
+                        "주문 확인 매수 시장가 수량 종목",
+                        "IRP TIGER 미국S&P500 매수 시장가 수량 1",
+                    ]
+                ),
+                artifacts=RunArtifacts(temp_dir, run_id="confirm-cancel"),
+            )
+
+            decision = decide_submit_permission("confirm-run", verified=True)
+            self.assertTrue(decision.may_open_confirmation)
+            self.assertFalse(decision.may_tap_final_submit)
+            executor._tap_profile_point("order.submit")
+            confirmation = executor._verify_confirmation_popup(
+                OrderRequest(account="IRP", side="매수", symbol_name="TIGER 미국S&P500", quantity=1)
+            )
+            if confirmation["passed"] and not decision.may_tap_final_submit:
+                executor._tap_profile_point("order_confirm.cancel")
+
+        self.assertEqual(device.taps[-2:], [(740, 1985), (270, 1985)])
 
 
 if __name__ == "__main__":

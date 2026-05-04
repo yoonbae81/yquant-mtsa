@@ -815,7 +815,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
-        confirmation_required = bool(result.decision.get("may_tap_submit"))
+        confirmation_required = bool(result.decision.get("may_open_confirmation"))
         return 0 if result.verified and (not confirmation_required or result.confirmation_verified) else 2
 
     if args.command == "order-filled-results":

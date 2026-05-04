@@ -143,7 +143,7 @@ class OrderExecutor:
         filled_results_text: str | None = None
         filled_results_read = False
 
-        if decision.may_tap_submit:
+        if decision.may_open_confirmation:
             self._tap_profile_point("order.submit")
             confirmation_verification = self._verify_confirmation_popup(request)
             confirmation_verified = confirmation_verification["passed"]
@@ -159,12 +159,15 @@ class OrderExecutor:
                     filled_results_text=None,
                     filled_results_read=False,
                 )
-            self._tap_profile_point("order_confirm.submit")
-            submitted = True
-            time.sleep(2)
-            if request.read_filled_results:
-                filled_results_text = self.read_filled_results(context)
-                filled_results_read = True
+            if decision.may_tap_final_submit:
+                self._tap_profile_point("order_confirm.submit")
+                submitted = True
+                time.sleep(2)
+                if request.read_filled_results:
+                    filled_results_text = self.read_filled_results(context)
+                    filled_results_read = True
+            else:
+                self._tap_profile_point("order_confirm.cancel")
 
         return self._result(
             request,
