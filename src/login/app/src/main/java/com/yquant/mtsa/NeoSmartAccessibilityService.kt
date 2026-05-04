@@ -334,6 +334,13 @@ class NeoSmartAccessibilityService : AccessibilityService() {
                     return@Thread
                 }
 
+                sendLoginStatus("로그인 후 메뉴 상태를 확인하는 중입니다...")
+                if (!verifyLoggedInFromMenuAfterCertificateLogin()) {
+                    dumpAllWindowsInfo()
+                    sendLoginStatus("공동인증서 로그인 후 한국투자 메뉴에서 로그인 상태를 확인하지 못했습니다.", false, finished = true)
+                    return@Thread
+                }
+
                 sendLoginStatus("공동인증서 로그인이 완료되었습니다.", true, finished = true)
             } catch (e: Exception) {
                 Log.e(TAG, "로그인 자동화 중 오류 발생", e)
@@ -2809,6 +2816,37 @@ class NeoSmartAccessibilityService : AccessibilityService() {
         return waitForRoot(timeoutMs = 15000) { root ->
             !isCertLoginRoot(root) && !isTransKeyRoot(root)
         } != null
+    }
+
+    private fun verifyLoggedInFromMenuAfterCertificateLogin(timeoutMs: Long = 30000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val root = waitForMtsWindow(timeoutMs = 1500)
+            if (root == null || isCertLoginRoot(root) || isTransKeyRoot(root)) {
+                sleep(500)
+                continue
+            }
+
+            val directState = inferLoginStateFromMenu(root)
+            if (directState == LoginState.LOGGED_IN) {
+                return true
+            }
+            if (directState == LoginState.LOGGED_OUT) {
+                return false
+            }
+
+            if (openBottomMenu(root)) {
+                val result = waitForLoginStateFromMenu(timeoutMs = 5000)
+                when (result.second) {
+                    LoginState.LOGGED_IN -> return true
+                    LoginState.LOGGED_OUT -> return false
+                    LoginState.UNKNOWN -> Unit
+                }
+            }
+
+            sleep(500)
+        }
+        return false
     }
 
     private fun waitForCertLoaded(): Boolean {
