@@ -18,6 +18,7 @@ class FakeDevice:
         self.taps = []
         self.keyevents = []
         self.text_inputs = []
+        self.back_count = 0
         self.activity = activity
 
     def tap(self, x, y):
@@ -33,6 +34,9 @@ class FakeDevice:
         if self.activity is None:
             raise RuntimeError("no activity")
         return self.activity
+
+    def press_back(self):
+        self.back_count += 1
 
 
 class FakeCapture:
@@ -66,6 +70,16 @@ def make_profile():
         {
             "device": {"width": 1080, "height": 2340},
             "screens": {
+                "home": {
+                    "anchors": {
+                        "required": ["상품/연금"],
+                        "optional": ["MY", "국내", "해외", "혜택", "홈"],
+                        "forbidden": ["오류"],
+                        "min_score": 0.65,
+                    },
+                    "tap_points": {},
+                    "regions": {},
+                },
                 "order": {
                     "tap_points": {
                         "submit": {"x": 740, "y": 1985, "post_delay_ms": 0},
@@ -74,6 +88,16 @@ def make_profile():
                     "regions": {
                         "quantity_input": {"x": 445, "y": 1250, "w": 590, "h": 90},
                     },
+                },
+                "search": {
+                    "anchors": {
+                        "required": ["통합검색"],
+                        "optional": ["최근 검색어"],
+                        "forbidden": [],
+                        "min_score": 0.65,
+                    },
+                    "tap_points": {},
+                    "regions": {},
                 },
                 "order_confirm": {
                     "anchors": {
@@ -252,6 +276,28 @@ class OrderExecutorQuantityTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "login activity"):
             executor.execute(OrderRequest(account="IRP", side="매수", symbol_name="TIGER 화장품", quantity=1))
+
+    def test_prepare_route_start_presses_back_from_search_before_menu_route(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(
+                    [
+                        "통합검색 최근 검색어 OTP/모바일OTP",
+                        "MY 국내 해외 상품/연금 혜택 홈",
+                    ]
+                ),
+                artifacts=RunArtifacts(temp_dir, run_id="route-search-back"),
+            )
+
+            context = executor._prepare_route_start_context()
+
+        self.assertEqual(device.back_count, 1)
+        self.assertEqual(context.current_screen, "홈")
 
 
 if __name__ == "__main__":

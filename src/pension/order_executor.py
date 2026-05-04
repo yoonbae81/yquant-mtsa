@@ -200,7 +200,7 @@ class OrderExecutor:
 
     def _open_order_route(self, route_name: str, account: str) -> InformationContext:
         registry = InformationRouteRegistry()
-        context = self._inspect_current_route_context()
+        context = self._prepare_route_start_context()
         steps = registry.plan(route_name, account=account, context=context)
         for step in steps:
             if step.action == "읽기":
@@ -230,6 +230,24 @@ class OrderExecutor:
             raise RuntimeError(f"MTS login activity is active: {activity.component}")
 
     def _inspect_current_route_context(self) -> InformationContext:
+        payload = self._inspect_current_state_payload()
+        if payload and payload.get("current_screen") in {"주문", "잔고", "메뉴", "홈"}:
+            return InformationContext.from_dict(payload)
+        return InformationContext()
+
+    def _prepare_route_start_context(self) -> InformationContext:
+        for _ in range(2):
+            payload = self._inspect_current_state_payload()
+            if payload and payload.get("current_screen") in {"주문", "잔고", "메뉴", "홈"}:
+                return InformationContext.from_dict(payload)
+            if not payload or payload.get("screen_key") not in {"search", "balance_holding_detail"}:
+                break
+            if hasattr(self.device, "press_back"):
+                self.device.press_back()
+                time.sleep(1)
+        return InformationContext()
+
+    def _inspect_current_state_payload(self) -> dict | None:
         try:
             image = self.artifacts.next_path("route-start-source", ext="png")
             state_json = self.artifacts.next_path("route-start-state", ext="json")
@@ -238,11 +256,10 @@ class OrderExecutor:
             snapshot = ScreenStateChecker().inspect(self.profile, result)
             payload = snapshot.to_dict()
             state_json.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            if payload.get("current_screen") in {"주문", "잔고", "메뉴", "홈"}:
-                return InformationContext.from_dict(payload)
+            return payload
         except Exception as exc:
             self.artifacts.write_json("route-start-inspect-failed", {"error": str(exc)})
-        return InformationContext()
+        return None
 
     def _select_symbol(self, request: OrderRequest) -> None:
         self._tap_profile_point("order.add_product")
