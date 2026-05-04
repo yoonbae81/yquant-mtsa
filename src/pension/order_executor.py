@@ -253,7 +253,7 @@ class OrderExecutor:
                         attempts.append({"ready": False, "reason": "restarted_mts_after_blocked_screenshots"})
                 time.sleep(interval_seconds)
                 continue
-            if payload is not None:
+            if payload is not None and payload.get("current_screen") in {"홈", "메뉴", "주문", "잔고"}:
                 attempts.append(
                     {
                         "ready": True,
@@ -263,6 +263,17 @@ class OrderExecutor:
                 )
                 self.artifacts.write_json("post-login-wait", {"success": True, "attempts": attempts})
                 return True
+            if payload is not None:
+                attempts.append(
+                    {
+                        "ready": False,
+                        "reason": "unknown_post_login_screen",
+                        "screen_key": payload.get("screen_key"),
+                        "current_screen": payload.get("current_screen"),
+                    }
+                )
+                time.sleep(interval_seconds)
+                continue
             attempts.append({"ready": False, "reason": "screencap_or_ocr_failed"})
             time.sleep(interval_seconds)
         self.artifacts.write_json("post-login-wait", {"success": False, "attempts": attempts})
