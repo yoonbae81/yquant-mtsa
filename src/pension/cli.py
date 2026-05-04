@@ -40,10 +40,14 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("current-activity", help="print the current resumed Android activity")
 
     subparsers.add_parser("login-status", help="check Android login helper readiness")
-    subparsers.add_parser("login", help="send LOGIN to the Android login helper after readiness check")
+    login = subparsers.add_parser("login", help="send LOGIN to the Android login helper after readiness check")
+    login.add_argument("--wait", action="store_true", help="wait for helper command result")
+    login.add_argument("--timeout", type=float, default=90)
 
     login_command = subparsers.add_parser("login-command", help="send a command to the Android login helper")
     login_command.add_argument("login_command", help="command, for example LOGIN")
+    login_command.add_argument("--wait", action="store_true", help="wait for helper command result")
+    login_command.add_argument("--timeout", type=float, default=90)
 
     capture = subparsers.add_parser("capture", help="capture current screen")
     capture.add_argument("output", nargs="?", default=None, help="output PNG path")
@@ -450,8 +454,12 @@ def main(argv: list[str] | None = None) -> int:
         if not status.ready:
             print(json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
             return 2
-        bridge.send_command("LOGIN")
-        print(json.dumps({"sent": "LOGIN"}, indent=2, ensure_ascii=False))
+        if args.wait:
+            result = bridge.send_command_and_wait("LOGIN", timeout=args.timeout)
+            print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+            return 0 if result.success and result.state == "LOGGED_IN" else 2
+        request_id = bridge.send_command("LOGIN")
+        print(json.dumps({"sent": "LOGIN", "request_id": request_id}, indent=2, ensure_ascii=False))
         return 0
 
     if args.command == "login-command":
@@ -460,8 +468,12 @@ def main(argv: list[str] | None = None) -> int:
         if not status.ready:
             print(json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
             return 2
-        bridge.send_command(args.login_command)
-        print(json.dumps({"sent": args.login_command}, indent=2, ensure_ascii=False))
+        if args.wait:
+            result = bridge.send_command_and_wait(args.login_command, timeout=args.timeout)
+            print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+            return 0 if result.success else 2
+        request_id = bridge.send_command(args.login_command)
+        print(json.dumps({"sent": args.login_command, "request_id": request_id}, indent=2, ensure_ascii=False))
         return 0
 
     if args.command == "capture":

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import time
+import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from .adb_device import AdbDevice
 
@@ -29,6 +33,26 @@ class LoginBridgeStatus:
         }
 
 
+@dataclass(frozen=True)
+class LoginCommandResult:
+    request_id: str
+    command: str
+    finished: bool
+    success: bool
+    state: str
+    message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "request_id": self.request_id,
+            "command": self.command,
+            "finished": self.finished,
+            "success": self.success,
+            "state": self.state,
+            "message": self.message,
+        }
+
+
 class LoginBridge:
     """Bridge to the Android login helper.
 
@@ -53,6 +77,57 @@ class LoginBridge:
             process_running=ACCESSIBILITY_HELPER_PACKAGE in processes,
         )
 
-    def send_command(self, command: str) -> None:
+    def send_command(self, command: str, *, request_id: str | None = None) -> str | None:
         args = ["am", "broadcast", "-a", ACTION_NAVIGATE, "--es", "command", command]
+        if request_id:
+            args.extend(["--es", "request_id", request_id])
         self.device.shell(*args, timeout=10, text=False)
+        return request_id
+
+    def send_command_and_wait(self, command: str, *, timeout: float = 90) -> LoginCommandResult:
+        request_id = f"pension-{uuid.uuid4().hex[:12]}"
+        self.device.run(["logcat", "-c"], timeout=10, text=False)
+        self.send_command(command, request_id=request_id)
+        deadline = time.monotonic() + timeout
+        last_result: LoginCommandResult | None = None
+        while time.monotonic() < deadline:
+            result = self._latest_command_result(request_id)
+            if result is not None:
+                last_result = result
+                if result.finished:
+                    return result
+            time.sleep(1)
+        if last_result is not None:
+            return last_result
+        return LoginCommandResult(
+            request_id=request_id,
+            command=command,
+            finished=False,
+            success=False,
+            state="TIMEOUT",
+            message=f"Timed out waiting for {command} result",
+        )
+
+    def _latest_command_result(self, request_id: str) -> LoginCommandResult | None:
+        output = self.device.run(["logcat", "-d", "-s", "MtsaCommandResult"], timeout=10, text=True)
+        assert isinstance(output, str)
+        result: LoginCommandResult | None = None
+        for line in output.splitlines():
+            payload_start = line.find("{")
+            if payload_start < 0:
+                continue
+            try:
+                payload = json.loads(line[payload_start:])
+            except json.JSONDecodeError:
+                continue
+            if payload.get("request_id") != request_id:
+                continue
+            result = LoginCommandResult(
+                request_id=str(payload.get("request_id", "")),
+                command=str(payload.get("command", "")),
+                finished=bool(payload.get("finished")),
+                success=bool(payload.get("success")),
+                state=str(payload.get("state", "UNKNOWN")),
+                message=str(payload.get("message", "")),
+            )
+        return result
