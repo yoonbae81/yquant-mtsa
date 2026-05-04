@@ -24,6 +24,10 @@ class MtsLoginRequiredError(RuntimeError):
     pass
 
 
+MTS_PACKAGE = "com.truefriend.neosmartarenewal"
+MTS_MAIN_COMPONENT = "com.truefriend.neosmartarenewal/com.truefriend.neosmartarenewal.ui.main.MTSMainActivity"
+
+
 @dataclass(frozen=True)
 class OrderRequest:
     account: str
@@ -222,6 +226,8 @@ class OrderExecutor:
     def _wait_for_post_login_screen(self, *, timeout_seconds: float = 30, interval_seconds: float = 2) -> bool:
         deadline = time.monotonic() + timeout_seconds
         attempts: list[dict] = []
+        blocked_screenshot_count = 0
+        restarted_mts = False
         while time.monotonic() < deadline:
             try:
                 self._ensure_not_login_activity()
@@ -233,7 +239,18 @@ class OrderExecutor:
             try:
                 payload = self._inspect_current_state_payload(label="post-login")
             except MtsLoginRequiredError as exc:
-                attempts.append({"ready": False, "reason": str(exc)})
+                reason = str(exc)
+                attempts.append({"ready": False, "reason": reason})
+                if (
+                    not restarted_mts
+                    and "blocking screenshots" in reason
+                    and not self._is_login_activity_active()
+                ):
+                    blocked_screenshot_count += 1
+                    if blocked_screenshot_count >= 2:
+                        self._restart_mts_after_login()
+                        restarted_mts = True
+                        attempts.append({"ready": False, "reason": "restarted_mts_after_blocked_screenshots"})
                 time.sleep(interval_seconds)
                 continue
             if payload is not None:
@@ -250,6 +267,13 @@ class OrderExecutor:
             time.sleep(interval_seconds)
         self.artifacts.write_json("post-login-wait", {"success": False, "attempts": attempts})
         return False
+
+    def _restart_mts_after_login(self) -> None:
+        if hasattr(self.device, "force_stop"):
+            self.device.force_stop(MTS_PACKAGE)
+        if hasattr(self.device, "start_activity"):
+            self.device.start_activity(MTS_MAIN_COMPONENT)
+        time.sleep(5)
 
     def read_filled_results(self, context: InformationContext | None = None) -> str:
         context = context or InformationContext(current_screen="주문")
@@ -298,14 +322,18 @@ class OrderExecutor:
             raise RuntimeError(f"expected {expected_screen} screen, got {current_screen or 'UNKNOWN'}")
 
     def _ensure_not_login_activity(self) -> None:
+        if self._is_login_activity_active():
+            activity = self.device.get_current_activity()
+            raise MtsLoginRequiredError(f"MTS login activity is active: {activity.component}")
+
+    def _is_login_activity_active(self) -> bool:
         if not hasattr(self.device, "get_current_activity"):
-            return
+            return False
         try:
             activity = self.device.get_current_activity()
         except Exception:
-            return
-        if "login" in activity.activity.casefold():
-            raise MtsLoginRequiredError(f"MTS login activity is active: {activity.component}")
+            return False
+        return "login" in activity.activity.casefold()
 
     def _inspect_current_route_context(self) -> InformationContext:
         payload = self._inspect_current_state_payload()

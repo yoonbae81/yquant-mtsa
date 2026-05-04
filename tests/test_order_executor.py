@@ -22,6 +22,8 @@ class FakeDevice:
         self.text_inputs = []
         self.back_count = 0
         self.activity = activity
+        self.force_stopped = []
+        self.started = []
 
     def tap(self, x, y):
         self.taps.append((x, y))
@@ -39,6 +41,12 @@ class FakeDevice:
 
     def press_back(self):
         self.back_count += 1
+
+    def force_stop(self, package):
+        self.force_stopped.append(package)
+
+    def start_activity(self, component):
+        self.started.append(component)
 
     def shell(self, *args, **kwargs):
         return ""
@@ -436,6 +444,31 @@ class OrderExecutorQuantityTests(unittest.TestCase):
             ready = executor._wait_for_post_login_screen(timeout_seconds=3, interval_seconds=0)
 
         self.assertTrue(ready)
+
+    def test_post_login_wait_restarts_mts_after_repeated_blocked_screenshots(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(fail_count=2),
+                ocr=FakeOcr("MY 국내 해외 상품/연금 혜택 홈"),
+                artifacts=RunArtifacts(temp_dir, run_id="post-login-restart"),
+            )
+            executor._restart_mts_after_login = lambda: (
+                device.force_stop("com.truefriend.neosmartarenewal"),
+                device.start_activity("com.truefriend.neosmartarenewal/com.truefriend.neosmartarenewal.ui.main.MTSMainActivity"),
+            )
+
+            ready = executor._wait_for_post_login_screen(timeout_seconds=3, interval_seconds=0)
+
+        self.assertTrue(ready)
+        self.assertEqual(device.force_stopped, ["com.truefriend.neosmartarenewal"])
+        self.assertEqual(
+            device.started,
+            ["com.truefriend.neosmartarenewal/com.truefriend.neosmartarenewal.ui.main.MTSMainActivity"],
+        )
 
 
 if __name__ == "__main__":
