@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image
 
 from pension.config import PensionConfig
+from pension.adb_device import ActivityInfo
 from pension.device_profile import DeviceProfile
 from pension.ocr import OcrResult
 from pension.order_executor import OrderExecutor, OrderRequest, quantity_text_matches
@@ -13,10 +14,11 @@ from pension.run_modes import decide_submit_permission
 
 
 class FakeDevice:
-    def __init__(self):
+    def __init__(self, activity=None):
         self.taps = []
         self.keyevents = []
         self.text_inputs = []
+        self.activity = activity
 
     def tap(self, x, y):
         self.taps.append((x, y))
@@ -26,6 +28,11 @@ class FakeDevice:
 
     def input_text(self, text):
         self.text_inputs.append(text)
+
+    def get_current_activity(self):
+        if self.activity is None:
+            raise RuntimeError("no activity")
+        return self.activity
 
 
 class FakeCapture:
@@ -210,6 +217,41 @@ class OrderExecutorQuantityTests(unittest.TestCase):
                 executor._tap_profile_point("order_confirm.cancel")
 
         self.assertEqual(device.taps[-2:], [(740, 1985), (270, 1985)])
+
+    def test_inspects_current_order_context_before_planning(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = OrderExecutor(
+                FakeDevice(),
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr("개인형IRP 비밀번호 매수 주문금액 원"),
+                artifacts=RunArtifacts(temp_dir, run_id="route-context"),
+            )
+
+            context = executor._inspect_current_route_context()
+
+        self.assertEqual(context.current_screen, "주문")
+        self.assertEqual(context.account, "IRP")
+        self.assertEqual(context.tab, "매수")
+
+    def test_rejects_order_execution_when_login_activity_is_foreground(self):
+        executor = OrderExecutor(
+            FakeDevice(
+                ActivityInfo(
+                    package="com.truefriend.neosmartarenewal",
+                    activity="com.truefriend.neosmartarenewal.ui.login.loginmain.LoginMainActivity",
+                    component="com.truefriend.neosmartarenewal/.ui.login.loginmain.LoginMainActivity",
+                )
+            ),
+            make_profile(),
+            PensionConfig({}),
+            capture=FakeCapture(),
+            ocr=FakeOcr(""),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "login activity"):
+            executor.execute(OrderRequest(account="IRP", side="매수", symbol_name="TIGER 화장품", quantity=1))
 
 
 if __name__ == "__main__":

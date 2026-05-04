@@ -30,6 +30,16 @@ def make_profile():
                     "tap_points": {},
                     "regions": {},
                 },
+                "balance_holding_detail": {
+                    "anchors": {
+                        "required": [],
+                        "optional": ["ETF", "투자한도", "현재가", "주문"],
+                        "forbidden": ["오류", "OTP", "모바일OTP"],
+                        "min_score": 0.5,
+                    },
+                    "tap_points": {},
+                    "regions": {},
+                },
             },
         }
     )
@@ -132,6 +142,19 @@ class ScreenStateTests(unittest.TestCase):
         self.assertEqual(snapshot.screen_key, "order")
         self.assertEqual(snapshot.current_screen, "주문")
         self.assertEqual(snapshot.tab, "잔고")
+
+    def test_inspect_does_not_treat_otp_screen_as_holding_detail(self):
+        result = OcrResult(
+            image_path="screen.png",
+            language="kor+eng",
+            text="OTP/모바일 OTP 모바일OTP PIN번호 변경 현재가 퇴직주문",
+            words=[],
+        )
+
+        snapshot = ScreenStateChecker().inspect(make_profile(), result)
+
+        self.assertIsNone(snapshot.screen_key)
+        self.assertIsNone(snapshot.current_screen)
 
 
 if __name__ == "__main__":

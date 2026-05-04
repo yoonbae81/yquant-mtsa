@@ -9,7 +9,11 @@
       "주문"
     ],
     "forbidden": [
-      "오류"
+      "오류",
+      "OTP",
+      "모바일OTP",
+      "OTP 등록",
+      "OTP/모바일 OTP"
     ],
     "min_score": 0.5
   },

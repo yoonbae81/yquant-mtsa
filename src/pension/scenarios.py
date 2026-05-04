@@ -5,9 +5,9 @@ from typing import Protocol
 
 from .device_profile import DeviceProfile, Point, Swipe
 from .navigator import (
-    sequence_for_open_screen,
-    sequence_for_select_account,
-    sequence_for_select_tab,
+    NavigationContext,
+    NavigationTarget,
+    Navigator,
     normalize_account,
 )
 
@@ -96,23 +96,23 @@ class PensionScenarios:
 
     @staticmethod
     def open_balance_sequence() -> list[tuple[str, str, str]]:
-        return sequence_for_open_screen("잔고")
+        return _navigation_sequence(NavigationTarget(screen="잔고"))
 
     @staticmethod
     def open_order_sequence() -> list[tuple[str, str, str]]:
-        return sequence_for_open_screen("주문")
+        return _navigation_sequence(NavigationTarget(screen="주문"))
 
     @staticmethod
     def select_account_sequence(account_type: str) -> list[tuple[str, str, str]]:
-        return sequence_for_select_account("주문", account_type)
+        return _navigation_sequence(NavigationTarget(screen="주문", account=account_type), context=NavigationContext(current_screen="주문"))
 
     @staticmethod
     def select_balance_account_sequence(account_type: str) -> list[tuple[str, str, str]]:
-        return sequence_for_select_account("잔고", account_type)
+        return _navigation_sequence(NavigationTarget(screen="잔고", account=account_type), context=NavigationContext(current_screen="잔고"))
 
     @staticmethod
     def ensure_balance_realtime_sequence() -> list[tuple[str, str, str]]:
-        return sequence_for_select_tab("잔고", "실시간")
+        return _navigation_sequence(NavigationTarget(screen="잔고", tab="실시간"), context=NavigationContext(current_screen="잔고"))
 
     @staticmethod
     def open_order_search_sequence() -> list[tuple[str, str, str]]:
@@ -173,3 +173,15 @@ class PensionScenarios:
             else:
                 raise ValueError(f"Unknown scenario action: {action}")
         return steps
+
+
+def _navigation_sequence(
+    target: NavigationTarget,
+    *,
+    context: NavigationContext | None = None,
+) -> list[tuple[str, str, str]]:
+    return [
+        step.as_sequence_item()
+        for step in Navigator().plan(target, context=context)
+        if step.profile_key is not None and not step.skipped
+    ]
