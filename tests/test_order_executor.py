@@ -48,7 +48,13 @@ class FakeDevice:
 
 
 class FakeCapture:
+    def __init__(self, fail_count=0):
+        self.fail_count = fail_count
+
     def capture(self, output_path):
+        if self.fail_count:
+            self.fail_count -= 1
+            raise RuntimeError("blocked screenshot")
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         Image.new("RGB", (1080, 2340), "white").save(output)
@@ -377,7 +383,7 @@ class OrderExecutorQuantityTests(unittest.TestCase):
                 make_profile(),
                 PensionConfig({}),
                 capture=FakeCapture(),
-                ocr=FakeOcr(""),
+                ocr=FakeOcr("MY 국내 해외 상품/연금 혜택 홈"),
                 artifacts=RunArtifacts(temp_dir, run_id="login-recovery"),
             )
             calls = {"route": 0}
@@ -403,6 +409,21 @@ class OrderExecutorQuantityTests(unittest.TestCase):
         self.assertEqual(calls["route"], 2)
         self.assertEqual(context.current_screen, "주문")
         self.assertEqual(FakeLoginBridge.instances[-1].sent, ["LOGIN"])
+
+    def test_post_login_wait_requires_capture_available(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = OrderExecutor(
+                FakeDevice(),
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(fail_count=1),
+                ocr=FakeOcr("MY 국내 해외 상품/연금 혜택 홈"),
+                artifacts=RunArtifacts(temp_dir, run_id="post-login-wait"),
+            )
+
+            ready = executor._wait_for_post_login_screen(timeout_seconds=3, interval_seconds=0)
+
+        self.assertTrue(ready)
 
 
 if __name__ == "__main__":

@@ -199,6 +199,8 @@ class OrderExecutor:
                 result = self._recover_certificate_login()
                 if not result.success or result.state != "LOGGED_IN":
                     raise RuntimeError(f"certificate login recovery failed: {result.state}: {result.message}") from exc
+                if not self._wait_for_post_login_screen():
+                    raise RuntimeError("certificate login recovery did not leave the login screen") from exc
 
     def _recover_certificate_login(self) -> LoginCommandResult:
         bridge = LoginBridge(self.device)
@@ -216,6 +218,33 @@ class OrderExecutor:
         result = bridge.send_command_and_wait("LOGIN")
         self.artifacts.write_json("login-recovery-result", result.to_dict())
         return result
+
+    def _wait_for_post_login_screen(self, *, timeout_seconds: float = 30, interval_seconds: float = 2) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        attempts: list[dict] = []
+        while time.monotonic() < deadline:
+            try:
+                self._ensure_not_login_activity()
+            except MtsLoginRequiredError as exc:
+                attempts.append({"ready": False, "reason": str(exc)})
+                time.sleep(interval_seconds)
+                continue
+
+            payload = self._inspect_current_state_payload(label="post-login")
+            if payload is not None:
+                attempts.append(
+                    {
+                        "ready": True,
+                        "screen_key": payload.get("screen_key"),
+                        "current_screen": payload.get("current_screen"),
+                    }
+                )
+                self.artifacts.write_json("post-login-wait", {"success": True, "attempts": attempts})
+                return True
+            attempts.append({"ready": False, "reason": "screencap_or_ocr_failed"})
+            time.sleep(interval_seconds)
+        self.artifacts.write_json("post-login-wait", {"success": False, "attempts": attempts})
+        return False
 
     def read_filled_results(self, context: InformationContext | None = None) -> str:
         context = context or InformationContext(current_screen="주문")
