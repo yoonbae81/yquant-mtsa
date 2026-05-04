@@ -313,6 +313,25 @@ class OrderExecutorQuantityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "expected 주문 screen"):
                 executor._require_current_screen("주문", label="order-route-complete")
 
+    def test_screen_requirement_rejects_login_activity_before_screencap(self):
+        device = FakeDevice(
+            ActivityInfo(
+                package="com.truefriend.neosmartarenewal",
+                activity="com.truefriend.neosmartarenewal.ui.login.loginmain.LoginMainActivity",
+                component="com.truefriend.neosmartarenewal/.ui.login.loginmain.LoginMainActivity",
+            )
+        )
+        executor = OrderExecutor(
+            device,
+            make_profile(),
+            PensionConfig({}),
+            capture=FakeCapture(),
+            ocr=FakeOcr("주문 매수 비밀번호"),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "login activity"):
+            executor._require_current_screen("주문", label="before-account-password-event")
+
 
 if __name__ == "__main__":
     unittest.main()

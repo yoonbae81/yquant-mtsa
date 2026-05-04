@@ -207,6 +207,7 @@ class OrderExecutor:
             if step.action == "읽기":
                 break
             if step.action == "이벤트":
+                self._require_current_screen("주문", label="before-account-password-event")
                 event_json = self.artifacts.next_path("account-password-event", ext="json")
                 result = AccountPasswordPopupHandler(self.device, self.profile, self.config, ocr=self.ocr).handle(
                     InformationContext(current_screen="주문", account=account, tab=route_name),
@@ -221,6 +222,7 @@ class OrderExecutor:
         return registry.context_after(route_name, account=account, context=context)
 
     def _require_current_screen(self, expected_screen: str, *, label: str) -> None:
+        self._ensure_not_login_activity()
         payload = self._inspect_current_state_payload(label=label)
         current_screen = payload.get("current_screen") if payload else None
         if current_screen != expected_screen:
