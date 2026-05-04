@@ -10,6 +10,7 @@ from .adb_device import AdbDevice
 from .config import PensionConfig
 from .device_profile import DeviceProfile
 from .events import AccountPasswordPopupHandler
+from .login_bridge import LoginBridge, LoginCommandResult
 from .ocr import TesseractOcr
 from .routes import InformationContext, InformationRouteRegistry, RouteStep
 from .run_artifacts import RunArtifacts
@@ -17,6 +18,10 @@ from .run_modes import decide_submit_permission
 from .screen_capture import ScreenCapture
 from .screen_state import ScreenStateChecker
 from .screen_values import ExpectedOrder, verify_order_text
+
+
+class MtsLoginRequiredError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -122,9 +127,8 @@ class OrderExecutor:
     def execute(self, request: OrderRequest) -> OrderExecutionResult:
         if request.quantity <= 0:
             raise ValueError("quantity must be positive")
-        self._ensure_not_login_activity()
         account = request.account.strip().upper()
-        context = self._open_order_route(request.route_name, account)
+        context = self._open_order_route_with_login_recovery(request.route_name, account)
         self._require_current_screen("주문", label="order-route-complete")
         self._select_symbol(request)
         self._select_market_price()
@@ -182,6 +186,37 @@ class OrderExecutor:
             filled_results_read=filled_results_read,
         )
 
+    def _open_order_route_with_login_recovery(self, route_name: str, account: str) -> InformationContext:
+        attempted_login_recovery = False
+        while True:
+            try:
+                self._ensure_not_login_activity()
+                return self._open_order_route(route_name, account)
+            except MtsLoginRequiredError as exc:
+                if attempted_login_recovery:
+                    raise RuntimeError(f"login recovery already attempted: {exc}") from exc
+                attempted_login_recovery = True
+                result = self._recover_certificate_login()
+                if not result.success or result.state != "LOGGED_IN":
+                    raise RuntimeError(f"certificate login recovery failed: {result.state}: {result.message}") from exc
+
+    def _recover_certificate_login(self) -> LoginCommandResult:
+        bridge = LoginBridge(self.device)
+        status = bridge.status()
+        self.artifacts.write_json("login-recovery-status", status.to_dict())
+        if not status.ready:
+            return LoginCommandResult(
+                request_id="",
+                command="LOGIN",
+                finished=True,
+                success=False,
+                state="HELPER_NOT_READY",
+                message="Android login helper is not ready",
+            )
+        result = bridge.send_command_and_wait("LOGIN")
+        self.artifacts.write_json("login-recovery-result", result.to_dict())
+        return result
+
     def read_filled_results(self, context: InformationContext | None = None) -> str:
         context = context or InformationContext(current_screen="주문")
         steps = InformationRouteRegistry().plan("체결결과", account=context.account, context=context)
@@ -236,7 +271,7 @@ class OrderExecutor:
         except Exception:
             return
         if "login" in activity.activity.casefold():
-            raise RuntimeError(f"MTS login activity is active: {activity.component}")
+            raise MtsLoginRequiredError(f"MTS login activity is active: {activity.component}")
 
     def _inspect_current_route_context(self) -> InformationContext:
         payload = self._inspect_current_state_payload()

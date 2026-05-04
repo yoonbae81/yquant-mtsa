@@ -4,11 +4,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from pension.config import PensionConfig
+import pension.order_executor as order_executor_module
 from pension.adb_device import ActivityInfo
+from pension.config import PensionConfig
 from pension.device_profile import DeviceProfile
+from pension.login_bridge import LoginCommandResult
 from pension.ocr import OcrResult
-from pension.order_executor import OrderExecutor, OrderRequest, quantity_text_matches
+from pension.order_executor import MtsLoginRequiredError, OrderExecutor, OrderRequest, quantity_text_matches
 from pension.run_artifacts import RunArtifacts
 from pension.run_modes import decide_submit_permission
 
@@ -38,6 +40,12 @@ class FakeDevice:
     def press_back(self):
         self.back_count += 1
 
+    def shell(self, *args, **kwargs):
+        return ""
+
+    def run(self, args, **kwargs):
+        return ""
+
 
 class FakeCapture:
     def capture(self, output_path):
@@ -63,6 +71,35 @@ class FakeOcr:
         else:
             text = self.texts.pop(0)
         return OcrResult(str(image_path), "kor+eng", text, [])
+
+
+class FakeLoginBridge:
+    instances = []
+
+    def __init__(self, device):
+        self.device = device
+        self.sent = []
+        FakeLoginBridge.instances.append(self)
+
+    def status(self):
+        class Status:
+            ready = True
+
+            def to_dict(self):
+                return {"ready": True}
+
+        return Status()
+
+    def send_command_and_wait(self, command, *, timeout=90):
+        self.sent.append(command)
+        return LoginCommandResult(
+            request_id="pension-test",
+            command=command,
+            finished=True,
+            success=True,
+            state="LOGGED_IN",
+            message="ok",
+        )
 
 
 def make_profile():
@@ -274,8 +311,8 @@ class OrderExecutorQuantityTests(unittest.TestCase):
             ocr=FakeOcr(""),
         )
 
-        with self.assertRaisesRegex(RuntimeError, "login activity"):
-            executor.execute(OrderRequest(account="IRP", side="매수", symbol_name="TIGER 화장품", quantity=1))
+        with self.assertRaisesRegex(MtsLoginRequiredError, "login activity"):
+            executor._ensure_not_login_activity()
 
     def test_prepare_route_start_presses_back_from_search_before_menu_route(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -329,8 +366,43 @@ class OrderExecutorQuantityTests(unittest.TestCase):
             ocr=FakeOcr("주문 매수 비밀번호"),
         )
 
-        with self.assertRaisesRegex(RuntimeError, "login activity"):
+        with self.assertRaisesRegex(MtsLoginRequiredError, "login activity"):
             executor._require_current_screen("주문", label="before-account-password-event")
+
+    def test_login_recovery_calls_helper_and_retries_route(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(""),
+                artifacts=RunArtifacts(temp_dir, run_id="login-recovery"),
+            )
+            calls = {"route": 0}
+
+            def fake_open_route(route_name, account):
+                calls["route"] += 1
+                if calls["route"] == 1:
+                    raise MtsLoginRequiredError("login")
+                return __import__("pension.routes", fromlist=["InformationContext"]).InformationContext(
+                    current_screen="주문",
+                    account=account,
+                    tab=route_name,
+                )
+
+            old_bridge = order_executor_module.LoginBridge
+            order_executor_module.LoginBridge = FakeLoginBridge
+            try:
+                executor._open_order_route = fake_open_route
+                context = executor._open_order_route_with_login_recovery("매수", "IRP")
+            finally:
+                order_executor_module.LoginBridge = old_bridge
+
+        self.assertEqual(calls["route"], 2)
+        self.assertEqual(context.current_screen, "주문")
+        self.assertEqual(FakeLoginBridge.instances[-1].sent, ["LOGIN"])
 
 
 if __name__ == "__main__":
