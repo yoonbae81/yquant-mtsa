@@ -673,7 +673,7 @@ class NeoSmartAccessibilityService : AccessibilityService() {
                 val layout = resolveVirtualKeypadProbeLayout(
                     waitForRoot(timeoutMs = 3000) { isVirtualKeyboardAvailableRoot(it) } ?: keypadRoot,
                 )
-                val adbHint = "adb exec-out screencap -p > screenshots/20260502-account-password-popup.png"
+                val adbHint = "adb exec-out screencap -p > screenshots/20260502-143012-account-password-popup.png"
 
                 sendBalanceData(
                     buildString {

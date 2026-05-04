@@ -30,8 +30,8 @@ default_profile: "src/pension/profiles/1080x2340"
 ```bash
 ./scripts/debug devices
 ./scripts/debug device-info
-./scripts/debug capture screenshots/20260503-current.png
-./scripts/debug ocr screenshots/20260503-current.png
+./scripts/debug capture screenshots/20260503-143012-current.png
+./scripts/debug ocr screenshots/20260503-143012-current.png
 ./scripts/debug --adb /opt/homebrew/bin/adb --serial 824e1b4 login-status
 ./scripts/debug --adb /opt/homebrew/bin/adb --serial 824e1b4 login-command LOGIN
 
@@ -40,9 +40,9 @@ default_profile: "src/pension/profiles/1080x2340"
 ./scripts/profile --profile src/pension/profiles/1080x2340 set-region order.holding_quantity 580 1010 430 90
 ./scripts/profile --profile src/pension/profiles/1080x2340 set-swipe menu.scroll_to_order 540 1830 540 930 450
 ./scripts/profile --profile src/pension/profiles/1080x2340 validate
-./scripts/profile --profile src/pension/profiles/1080x2340 read-region order.holding_quantity --image screenshots/20260503-current.png
-./scripts/profile --profile src/pension/profiles/1080x2340 check order --image screenshots/20260503-current.png
-./scripts/profile --profile src/pension/profiles/1080x2340 detect-recovery --image screenshots/20260503-current.png
+./scripts/profile --profile src/pension/profiles/1080x2340 read-region order.holding_quantity --image screenshots/20260503-143012-current.png
+./scripts/profile --profile src/pension/profiles/1080x2340 check order --image screenshots/20260503-143012-current.png
+./scripts/profile --profile src/pension/profiles/1080x2340 detect-recovery --image screenshots/20260503-143012-current.png
 
 ./scripts/run login
 ./scripts/run validate-scenario open-balance

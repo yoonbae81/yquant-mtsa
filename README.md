@@ -326,8 +326,8 @@ scripts/debug
 ./scripts/run verify-order --text "IRP 1234 TIGER 미국S&P500 매수 수량 10 금액 100000" --account-type IRP --account-hint 1234 --symbol-name "TIGER 미국S&P500" --side 매수 --quantity 10 --amount 100000
 
 ./scripts/debug devices
-./scripts/debug capture screenshots/20260503-current.png
-./scripts/debug ocr screenshots/20260503-current.png
+./scripts/debug capture screenshots/20260503-143012-current.png
+./scripts/debug ocr screenshots/20260503-143012-current.png
 ```
 
 ## 문서

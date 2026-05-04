@@ -84,9 +84,9 @@ ADB screenshot OCR을 보안키패드 입력의 필수 경로로 두지 않는�
 
 ```bash
 ./scripts/profile --profile src/pension/profiles/1080x2340 map-keypad secure_number_keypad.digit_grid \
-  --image screenshots/20260503-account-password-current.png \
-  --crop screenshots/20260503-account-digit-grid.png \
-  --json screenshots/20260503-account-digit-grid.mapping.json
+  --image screenshots/20260503-143012-account-password-current.png \
+  --crop screenshots/20260503-143012-account-digit-grid.png \
+  --json screenshots/20260503-143012-account-digit-grid.mapping.json
 ```
 
 `map-keypad`는 전체 화면 OCR을 하지 않는다. ADB screenshot 직후 `digit_grid`만 crop하고, 키 좌표 산출에 필요한 TSV 단어 좌표만 읽는다. 결과는 실제 탭 가능한 전체 화면 좌표를 반환한다. 숫자 10개가 모두 인식되고 빈칸 2개가 감지된 경우에만 `complete: true`가 된다.

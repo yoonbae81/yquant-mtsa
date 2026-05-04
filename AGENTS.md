@@ -79,13 +79,13 @@ accounts:
 
 임시 PNG 스크린샷은 `screenshots/` 폴더에 저장합니다.
 
-파일명은 `yyyymmdd-title.png` 형식을 사용하고, `title`은 내용을 알아볼 수 있는 짧은 영문 kebab-case로 작성합니다.
+파일명은 `yyyymmdd-hhmmss-title.png` 형식을 사용해 촬영 시각까지 기록하고, `title`은 내용을 알아볼 수 있는 짧은 영문 kebab-case로 작성합니다.
 
 예:
 
 ```text
-screenshots/20260503-account-password.png
-screenshots/20260503-retirement-order.png
+screenshots/20260503-143012-account-password.png
+screenshots/20260503-143245-retirement-order.png
 ```
 
 `screenshots/`는 언제든 삭제 가능한 임시 폴더로 취급합니다.
