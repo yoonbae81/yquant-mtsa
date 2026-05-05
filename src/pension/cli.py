@@ -15,7 +15,7 @@ from .holdings_grid import BalanceHoldingsGridParser, HoldingRow, load_ocr_json,
 from .holdings_service import HoldingsTickerResolver
 from .ocr import TesseractOcr
 from .order_executor import MarketRoundTripRequest, OrderExecutor, OrderRequest, normalize_order_side
-from .recovery import RecoveryDetector
+from .recovery import RecoveryDetector, RecoveryHandler
 from .routes import InformationContext, InformationRouteRegistry, RouteStep
 from .run_artifacts import RunArtifacts
 from .run_modes import decide_submit_permission
@@ -337,12 +337,34 @@ def _trace_route_step(capture: ScreenCapture, artifacts: RunArtifacts, index: in
     capture.capture(artifacts.next_path(f"holdings-route-{index:02d}-{safe_label}", ext="png"))
 
 
+def _attempt_recovery(
+    *,
+    device: AdbDevice,
+    profile: DeviceProfile,
+    capture: ScreenCapture,
+    ocr: TesseractOcr,
+    artifacts: RunArtifacts,
+    label: str,
+    psm: int = 6,
+) -> dict:
+    image = artifacts.next_path(f"{label}-recovery-source", ext="png")
+    capture.capture(image)
+    ocr_result = ocr.recognize(image, psm=psm)
+    result = RecoveryHandler(device, profile).handle(ocr_result).to_dict()
+    if result["detected"] or result["handled"]:
+        artifacts.write_json(f"{label}-recovery", result)
+    if result["handled"]:
+        time.sleep(0.8)
+    return result
+
+
 def _execute_holdings_route(
     *,
     device: AdbDevice,
     profile: DeviceProfile,
     account: str,
     capture: ScreenCapture,
+    ocr: TesseractOcr,
     artifacts: RunArtifacts,
 ) -> InformationContext:
     registry = InformationRouteRegistry()
@@ -352,6 +374,18 @@ def _execute_holdings_route(
     for index, step in enumerate(steps, start=1):
         if step.action == "읽기":
             break
+        recovery = _attempt_recovery(
+            device=device,
+            profile=profile,
+            capture=capture,
+            ocr=ocr,
+            artifacts=artifacts,
+            label=f"holdings-route-{index:02d}",
+        )
+        if recovery.get("detected") and not recovery.get("handled"):
+            reason = recovery.get("reason") or "unknown-recovery-failure"
+            candidate = recovery.get("candidate")
+            raise RuntimeError(f"recovery detected but not handled: candidate={candidate}, reason={reason}")
         _execute_route_step(device, profile, step)
         if not step.skipped and step.profile_key is not None:
             time.sleep(profile.post_delay_ms(step.profile_key) / 1000)
@@ -371,6 +405,20 @@ def _capture_holdings_page(
     psm: int,
 ) -> list[HoldingRow]:
     page_label = f"holdings-page-{page:02d}"
+    recovery = _attempt_recovery(
+        device=device,
+        profile=profile,
+        capture=capture,
+        ocr=ocr,
+        artifacts=artifacts,
+        label=f"{page_label}-pre-capture",
+        psm=psm,
+    )
+    if recovery.get("detected") and not recovery.get("handled"):
+        reason = recovery.get("reason") or "unknown-recovery-failure"
+        candidate = recovery.get("candidate")
+        raise RuntimeError(f"recovery detected but not handled: candidate={candidate}, reason={reason}")
+
     left_image = artifacts.next_path(f"{page_label}-left-source", ext="png")
     left_crop = artifacts.next_path(f"{page_label}-left-grid", ext="png")
     left_json = artifacts.next_path(f"{page_label}-left-grid", ext="json")
@@ -774,6 +822,7 @@ def main(argv: list[str] | None = None) -> int:
                 profile=profile,
                 account=account,
                 capture=capture,
+                ocr=ocr,
                 artifacts=artifacts,
             )
         except RuntimeError as exc:
@@ -790,16 +839,20 @@ def main(argv: list[str] | None = None) -> int:
                 capture=capture,
                 ocr=ocr,
             )
-        rows = _read_holdings_rows(
-            device=device,
-            profile=profile,
-            capture=capture,
-            ocr=ocr,
-            artifacts=artifacts,
-            ticker_resolver=page_ticker_resolver,
-            max_pages=args.max_pages,
-            psm=args.psm,
-        )
+        try:
+            rows = _read_holdings_rows(
+                device=device,
+                profile=profile,
+                capture=capture,
+                ocr=ocr,
+                artifacts=artifacts,
+                ticker_resolver=page_ticker_resolver,
+                max_pages=args.max_pages,
+                psm=args.psm,
+            )
+        except RuntimeError as exc:
+            print(json.dumps({"account": account, "error": str(exc), "holdings": []}, indent=2, ensure_ascii=False))
+            return 2
         cache_only_resolver = HoldingsTickerResolver(cache)
         holdings = cache_only_resolver.enrich(rows)
         missing_tickers = cache_only_resolver.missing_ticker_names(rows)

@@ -7,6 +7,7 @@
         "오늘 하루"
       ],
       "tap_points": {},
+      "min_matches": 2,
       "max_attempts": 2,
       "allowed_actions": [
         "close",
@@ -24,6 +25,58 @@
       "allowed_actions": [
         "extend",
         "back"
+      ]
+    },
+    "universal_popup": {
+      "anchors": [
+        "안내",
+        "공지",
+        "알림",
+        "알려드릴게요",
+        "다음"
+      ],
+      "tap_points": {
+        "later": {
+          "x": 200,
+          "y": 2060,
+          "rx": 0.185185,
+          "ry": 0.880342
+        }
+      },
+      "button_labels": {
+        "later": [
+          "다음에",
+          "나중에"
+        ],
+        "today_skip": [
+          "오늘 하루 보지 않기",
+          "오늘하루 보지않기",
+          "오늘 하루 닫기"
+        ],
+        "dont_show_today": [
+          "오늘 보지 않기",
+          "오늘보지않기"
+        ],
+        "never_show": [
+          "다시 보지 않기",
+          "다시보지않기"
+        ]
+      },
+      "fallback_actions": {
+        "later": [
+          "다음에",
+          "나중에",
+          "알려드릴게요",
+          "알려 드릴게요",
+          "다음"
+        ]
+      },
+      "max_attempts": 2,
+      "allowed_actions": [
+        "later",
+        "today_skip",
+        "dont_show_today",
+        "never_show"
       ]
     },
     "app_exit_confirm": {

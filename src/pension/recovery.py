@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .device_profile import DeviceProfile
-from .ocr import OcrResult
+from .ocr import OcrResult, OcrWord
 from .screen_state import normalize_text
 
 
@@ -12,6 +12,7 @@ SAFE_ACTION_ORDER = (
     "cancel",
     "close",
     "dismiss",
+    "later",
     "today_skip",
     "dont_show_today",
     "never_show",
@@ -75,15 +76,19 @@ class RecoveryDetector:
         for name, recovery in self.recoveries.items():
             anchors = list(recovery.get("anchors", []))
             matched = [anchor for anchor in anchors if normalize_text(anchor) in text]
-            if not matched:
+            min_matches = int(recovery.get("min_matches", 1))
+            dynamic_tap_points = _dynamic_tap_points(recovery, ocr_result, text)
+            if len(matched) < min_matches and not dynamic_tap_points:
                 continue
+            tap_points = dict(recovery.get("tap_points", {}))
+            tap_points.update(dynamic_tap_points)
             candidates.append(
                 RecoveryCandidate(
                     name=name,
                     anchors=anchors,
                     matched=matched,
                     max_attempts=int(recovery.get("max_attempts", 1)),
-                    tap_points=dict(recovery.get("tap_points", {})),
+                    tap_points=tap_points,
                 )
             )
         return candidates
@@ -125,8 +130,8 @@ class RecoveryHandler:
             self.device.press_back()
             return RecoveryResult(True, True, candidate.name, action, attempts, "handled")
 
-        point = self.profile.recovery_tap_point(f"{candidate.name}.{action}")
-        self.device.tap(point.x, point.y)
+        point = candidate.tap_points[action]
+        self.device.tap(int(point["x"]), int(point["y"]))
         return RecoveryResult(True, True, candidate.name, action, attempts, "handled")
 
     def _select_action(self, candidate: RecoveryCandidate) -> str | None:
@@ -141,3 +146,49 @@ class RecoveryHandler:
             if action in available_taps:
                 return action
         return None
+
+
+def _dynamic_tap_points(recovery: dict[str, Any], ocr_result: OcrResult, normalized_text: str) -> dict[str, dict[str, Any]]:
+    tap_points: dict[str, dict[str, Any]] = {}
+    button_labels = recovery.get("button_labels", {})
+    for action, labels in button_labels.items():
+        point = _find_button_point(ocr_result.words, labels)
+        if point is not None:
+            tap_points[action] = point
+
+    fallback_actions = recovery.get("fallback_actions", {})
+    configured_taps = recovery.get("tap_points", {})
+    for action, anchors in fallback_actions.items():
+        if action in tap_points or action not in configured_taps:
+            continue
+        if any(normalize_text(anchor) in normalized_text for anchor in anchors):
+            tap_points[action] = dict(configured_taps[action])
+    return tap_points
+
+
+def _find_button_point(words: list[OcrWord], labels: list[str]) -> dict[str, Any] | None:
+    normalized_labels = {normalize_text(label) for label in labels}
+    useful_words = [word for word in words if word.confidence >= 0 and normalize_text(word.text)]
+    for size in (1, 2, 3):
+        for index in range(0, len(useful_words) - size + 1):
+            group = useful_words[index : index + size]
+            if not _same_line(group):
+                continue
+            text = normalize_text("".join(word.text for word in group))
+            if text not in normalized_labels:
+                continue
+            left = min(word.left for word in group)
+            top = min(word.top for word in group)
+            right = max(word.left + word.width for word in group)
+            bottom = max(word.top + word.height for word in group)
+            return {"x": (left + right) // 2, "y": (top + bottom) // 2, "source": "ocr_button"}
+    return None
+
+
+def _same_line(words: list[OcrWord]) -> bool:
+    if not words:
+        return False
+    top = min(word.top for word in words)
+    bottom = max(word.top + word.height for word in words)
+    tallest = max(word.height for word in words)
+    return bottom - top <= max(24, tallest * 2)
