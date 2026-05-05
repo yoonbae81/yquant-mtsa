@@ -81,7 +81,7 @@
    - [x] `inspect`, `dry-run`, `confirm-run`, `real-run` 실행 모드 제공
    - [x] `dry-run`에서는 최종 주문 직전 중단
    - [x] `confirm-run`에서는 사용자 승인 후 진행 여부 결정
-   - [x] `real-run`에서는 명시적 허용 조건을 만족할 때만 최종 주문 버튼 탭
+   - [x] `real-run`에서는 설정 허용, 명시적 real-run 옵션, live-trade acknowledgement를 모두 만족할 때만 최종 주문 버튼 탭
    - [x] before/after screenshot, crop, OCR JSON, decision JSON 저장
    - [x] 저장된 주문 화면 산출물을 이용한 replay 테스트 구현
 
@@ -202,6 +202,8 @@ CLI 기준 예시는 다음과 같습니다.
 ./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml order --account IRP --side buy --symbol-code 360750 --quantity 1 --expected-amount 45000 --mode dry-run
 ./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml handle-account-password-popup --state-json runs/current-state.json --json runs/account-password-event.json
 ```
+
+단건 주문의 `real-run`은 `config.yaml`의 `allow_real_run: true`, `--explicit-real-run`, `--acknowledge-live-trade`가 모두 있어야 최종 제출을 허용합니다.
 
 보유종목 조회는 보이는 그리드를 좌우로 읽고, 필요하면 세로로 스크롤하며 `--max-pages` 한도까지 반복합니다. ticker 캐시는 기본적으로 `state/holding-tickers.tsv`에 저장합니다. 형식은 종목명과 ticker 두 칸만 사용합니다. 기본 실행에서는 cache miss 종목을 같은 페이지에서 탭해 상세 화면 ticker를 확보한 뒤 TSV에 저장하고, 끝까지 확보하지 못한 ticker가 있으면 성공 응답 대신 `ticker cache is incomplete` 오류로 중단합니다. `--no-resolve-missing-tickers`는 진단용으로만 사용합니다.
 

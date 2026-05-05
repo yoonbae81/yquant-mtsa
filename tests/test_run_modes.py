@@ -32,16 +32,36 @@ class RunModeTests(unittest.TestCase):
 
     def test_real_run_requires_verification_and_explicit_flag(self):
         self.assertFalse(
-            decide_submit_permission("real-run", verified=False, explicit_real_run=True).may_tap_submit
+            decide_submit_permission(
+                "real-run",
+                verified=False,
+                explicit_real_run=True,
+                acknowledge_live_trade=True,
+            ).may_tap_submit
         )
         self.assertFalse(
-            decide_submit_permission("real-run", verified=True, explicit_real_run=False).may_tap_submit
+            decide_submit_permission(
+                "real-run",
+                verified=True,
+                explicit_real_run=False,
+                acknowledge_live_trade=True,
+            ).may_tap_submit
         )
         self.assertTrue(
-            decide_submit_permission("real-run", verified=True, explicit_real_run=True).may_tap_submit
+            decide_submit_permission(
+                "real-run",
+                verified=True,
+                explicit_real_run=True,
+                acknowledge_live_trade=True,
+            ).may_tap_submit
         )
         self.assertTrue(
-            decide_submit_permission("real-run", verified=True, explicit_real_run=True).may_open_confirmation
+            decide_submit_permission(
+                "real-run",
+                verified=True,
+                explicit_real_run=True,
+                acknowledge_live_trade=True,
+            ).may_open_confirmation
         )
 
     def test_real_run_requires_config_allow_flag_when_provided(self):
@@ -50,9 +70,16 @@ class RunModeTests(unittest.TestCase):
                 "real-run",
                 verified=True,
                 explicit_real_run=True,
+                acknowledge_live_trade=True,
                 config_allows_real_run=False,
             ).may_tap_submit
         )
+
+    def test_real_run_requires_live_trade_acknowledgement(self):
+        decision = decide_submit_permission("real-run", verified=True, explicit_real_run=True)
+
+        self.assertFalse(decision.may_tap_submit)
+        self.assertIn("acknowledge_live_trade", decision.reason)
 
 
 if __name__ == "__main__":

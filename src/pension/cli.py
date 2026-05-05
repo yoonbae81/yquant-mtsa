@@ -170,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     submit_policy.add_argument("mode", choices=["inspect", "dry-run", "confirm-run", "manual-submit", "real-run"])
     submit_policy.add_argument("--verified", action="store_true")
     submit_policy.add_argument("--explicit-real-run", action="store_true")
+    submit_policy.add_argument("--acknowledge-live-trade", action="store_true")
 
     extract_holdings = subparsers.add_parser(
         "extract-balance-holdings",
@@ -198,6 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     order.add_argument("--expected-amount", type=int, default=None)
     order.add_argument("--mode", choices=["inspect", "dry-run", "confirm-run", "manual-submit", "real-run"], default="dry-run")
     order.add_argument("--explicit-real-run", action="store_true")
+    order.add_argument("--acknowledge-live-trade", action="store_true")
     order.add_argument("--no-read-filled-results", action="store_true")
     order.add_argument("--psm", type=int, default=6)
 
@@ -744,6 +746,7 @@ def main(argv: list[str] | None = None) -> int:
             args.mode,
             verified=args.verified,
             explicit_real_run=args.explicit_real_run,
+            acknowledge_live_trade=args.acknowledge_live_trade,
         )
         print(json.dumps(decision.to_dict(), indent=2, ensure_ascii=False))
         return 0 if decision.may_tap_submit or args.mode != "real-run" else 2
@@ -835,6 +838,7 @@ def main(argv: list[str] | None = None) -> int:
                 quantity=args.quantity,
                 mode=args.mode,
                 explicit_real_run=args.explicit_real_run,
+                acknowledge_live_trade=args.acknowledge_live_trade,
                 read_filled_results=not args.no_read_filled_results,
                 psm=args.psm,
             )

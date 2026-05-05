@@ -40,6 +40,7 @@ def decide_submit_permission(
     *,
     verified: bool,
     explicit_real_run: bool = False,
+    acknowledge_live_trade: bool = False,
     config_allows_real_run: bool = True,
 ) -> RunModeDecision:
     run_mode = RunMode(mode)
@@ -67,4 +68,6 @@ def decide_submit_permission(
         return RunModeDecision(run_mode, False, False, False, "real-run requires allow_real_run in config")
     if not explicit_real_run:
         return RunModeDecision(run_mode, False, False, False, "real-run requires explicit_real_run")
+    if not acknowledge_live_trade:
+        return RunModeDecision(run_mode, False, False, False, "real-run requires acknowledge_live_trade")
     return RunModeDecision(run_mode, True, True, False, "real-run final submit allowed")

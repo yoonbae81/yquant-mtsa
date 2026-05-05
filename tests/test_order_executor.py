@@ -832,6 +832,17 @@ class OrderExecutorQuantityTests(unittest.TestCase):
         self.assertEqual(result.blocked_reason, "buy_filled_results_not_verified")
         self.assertEqual(calls, ["매수"])
 
+    def test_single_real_run_requires_live_trade_acknowledgement(self):
+        decision = decide_submit_permission(
+            "real-run",
+            verified=True,
+            explicit_real_run=True,
+            config_allows_real_run=True,
+        )
+
+        self.assertFalse(decision.may_tap_submit)
+        self.assertIn("acknowledge_live_trade", decision.reason)
+
     def test_market_roundtrip_real_run_requires_acknowledgement(self):
         executor = OrderExecutor(FakeDevice(), make_profile(), PensionConfig({}))
 

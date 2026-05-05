@@ -74,6 +74,28 @@ class CliParserTests(unittest.TestCase):
         self.assertTrue(args.explicit_real_run)
         self.assertTrue(args.acknowledge_live_trade)
 
+    def test_order_real_run_accepts_acknowledgement_flag(self):
+        args = build_parser().parse_args(
+            [
+                "order",
+                "--account",
+                "IRP",
+                "--side",
+                "buy",
+                "--symbol-code",
+                "228790",
+                "--quantity",
+                "1",
+                "--mode",
+                "real-run",
+                "--explicit-real-run",
+                "--acknowledge-live-trade",
+            ]
+        )
+
+        self.assertTrue(args.explicit_real_run)
+        self.assertTrue(args.acknowledge_live_trade)
+
     def test_order_accepts_manual_submit_mode(self):
         args = build_parser().parse_args(
             [

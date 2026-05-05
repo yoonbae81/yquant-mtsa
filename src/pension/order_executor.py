@@ -42,6 +42,7 @@ class OrderRequest:
     expected_amount: int | None = None
     mode: str = "dry-run"
     explicit_real_run: bool = False
+    acknowledge_live_trade: bool = False
     read_filled_results: bool = True
     psm: int = 6
 
@@ -82,6 +83,7 @@ class OrderExecutionResult:
                 "symbol_name": self.request.symbol_name,
                 "expected_amount": self.request.expected_amount,
                 "mode": self.request.mode,
+                "acknowledge_live_trade": self.request.acknowledge_live_trade,
                 "read_filled_results": self.request.read_filled_results,
             },
             "verified": self.verified,
@@ -191,6 +193,7 @@ class OrderExecutor:
             request.mode,
             verified=verification["passed"],
             explicit_real_run=request.explicit_real_run,
+            acknowledge_live_trade=request.acknowledge_live_trade,
             config_allows_real_run=self.config.allow_real_run,
         )
         submitted = False
@@ -257,6 +260,7 @@ class OrderExecutor:
                 symbol_name=request.symbol_name,
                 mode=request.mode,
                 explicit_real_run=request.explicit_real_run,
+                acknowledge_live_trade=request.acknowledge_live_trade,
                 read_filled_results=True,
                 psm=request.psm,
             )
@@ -280,6 +284,7 @@ class OrderExecutor:
                 symbol_name=request.symbol_name,
                 mode=request.mode,
                 explicit_real_run=request.explicit_real_run,
+                acknowledge_live_trade=request.acknowledge_live_trade,
                 read_filled_results=True,
                 psm=request.psm,
             )
