@@ -43,6 +43,16 @@ class ExpectedOrder:
 
 
 @dataclass(frozen=True)
+class ExpectedFilledResult:
+    account_type: str | None = None
+    symbol_code: str | None = None
+    symbol_name: str | None = None
+    side: str | None = None
+    quantity: int | None = None
+    price_type: str | None = None
+
+
+@dataclass(frozen=True)
 class VerificationResult:
     target: str
     passed: bool
@@ -96,6 +106,24 @@ def verify_order_text(text: str, expected: ExpectedOrder) -> VerificationResult:
     if expected.price_type:
         checks.append((f"price_type:{expected.price_type}", normalize_text(expected.price_type) in normalized))
     return _result("order", checks)
+
+
+def verify_filled_result_text(text: str, expected: ExpectedFilledResult) -> VerificationResult:
+    checks: list[tuple[str, bool]] = []
+    normalized = normalize_text(text)
+    if expected.account_type:
+        checks.append((f"account_type:{expected.account_type.upper()}", expected.account_type.upper() in text.upper()))
+    if expected.symbol_code:
+        checks.append((f"symbol_code:{expected.symbol_code}", normalize_code(expected.symbol_code) in normalize_code(text)))
+    if expected.symbol_name:
+        checks.append((f"symbol_name:{expected.symbol_name}", normalize_text(expected.symbol_name) in normalized))
+    if expected.side:
+        checks.append((f"side:{expected.side}", normalize_text(expected.side) in normalized))
+    if expected.quantity is not None:
+        checks.append((f"quantity:{expected.quantity}", str(expected.quantity) in re.sub(r"[^0-9]", " ", text).split()))
+    if expected.price_type:
+        checks.append((f"price_type:{expected.price_type}", normalize_text(expected.price_type) in normalized))
+    return _result("filled_results", checks)
 
 
 def _result(target: str, checks: list[tuple[str, bool]]) -> VerificationResult:

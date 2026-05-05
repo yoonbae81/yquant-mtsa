@@ -22,6 +22,14 @@ class RunModeTests(unittest.TestCase):
 
         self.assertFalse(decision.may_open_confirmation)
 
+    def test_manual_submit_opens_confirmation_without_auto_submit_or_cancel(self):
+        decision = decide_submit_permission("manual-submit", verified=True, explicit_real_run=True)
+
+        self.assertTrue(decision.may_open_confirmation)
+        self.assertFalse(decision.may_tap_submit)
+        self.assertFalse(decision.may_tap_final_submit)
+        self.assertFalse(decision.should_cancel_confirmation)
+
     def test_real_run_requires_verification_and_explicit_flag(self):
         self.assertFalse(
             decide_submit_permission("real-run", verified=False, explicit_real_run=True).may_tap_submit

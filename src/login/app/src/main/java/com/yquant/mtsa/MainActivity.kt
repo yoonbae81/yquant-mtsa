@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         CoroutineScope(Dispatchers.Main).launch {
-            delay(1000)
+            delay(100)
             sendCommandToAccessibilityService("LOGIN")
             statusTextView.text = "로그인 명령을 전송했습니다. MTS 앱을 확인하세요."
         }

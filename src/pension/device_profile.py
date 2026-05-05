@@ -32,6 +32,8 @@ class Swipe:
 
 
 class DeviceProfile:
+    _INIT_TEMPLATE_DIR = Path(__file__).parent / "profiles" / "1080x2340"
+
     def __init__(self, data: dict[str, Any], source_path: Path | None = None):
         self.data = data
         self.source_path = source_path
@@ -260,18 +262,53 @@ class DeviceProfile:
         height: int,
         density: int | None,
     ) -> "DeviceProfile":
-        return cls(
-            {
-                "device": {
-                    "width": width,
-                    "height": height,
-                    "density": density,
-                },
-                "screens": {},
-                "recoveries": {},
-                "schema_version": 1,
-            }
-        )
+        data = cls._load_directory(cls._INIT_TEMPLATE_DIR)
+        data["schema_version"] = int(data.get("schema_version", 1))
+        data["device"] = {"width": width, "height": height, "density": density}
+        cls._scale_geometry(data, width, height)
+        return cls(data)
+
+    @classmethod
+    def _scale_geometry(cls, data: dict[str, Any], width: int, height: int) -> None:
+        for screen_data in data.get("screens", {}).values():
+            cls._scale_geometry_container(screen_data, width, height)
+        for recovery_data in data.get("recoveries", {}).values():
+            cls._scale_geometry_container(recovery_data, width, height)
+
+    @classmethod
+    def _scale_geometry_container(cls, container: dict[str, Any], width: int, height: int) -> None:
+        for value in container.get("tap_points", {}).values():
+            cls._scale_point(value, width, height)
+        for group_name, group in container.items():
+            if group_name.startswith("tap_points_sample") and isinstance(group, dict):
+                for value in group.values():
+                    cls._scale_point(value, width, height)
+        for value in container.get("regions", {}).values():
+            cls._scale_region(value, width, height)
+        for value in container.get("swipes", {}).values():
+            cls._scale_swipe(value, width, height)
+
+    @staticmethod
+    def _scale_point(point: dict[str, Any], width: int, height: int) -> None:
+        if "rx" in point and "ry" in point:
+            point["x"] = round(float(point["rx"]) * width)
+            point["y"] = round(float(point["ry"]) * height)
+
+    @staticmethod
+    def _scale_region(region: dict[str, Any], width: int, height: int) -> None:
+        if {"rx", "ry", "rw", "rh"}.issubset(region):
+            region["x"] = round(float(region["rx"]) * width)
+            region["y"] = round(float(region["ry"]) * height)
+            region["w"] = round(float(region["rw"]) * width)
+            region["h"] = round(float(region["rh"]) * height)
+
+    @staticmethod
+    def _scale_swipe(swipe: dict[str, Any], width: int, height: int) -> None:
+        if {"rx1", "ry1", "rx2", "ry2"}.issubset(swipe):
+            swipe["x1"] = round(float(swipe["rx1"]) * width)
+            swipe["y1"] = round(float(swipe["ry1"]) * height)
+            swipe["x2"] = round(float(swipe["rx2"]) * width)
+            swipe["y2"] = round(float(swipe["ry2"]) * height)
 
     @staticmethod
     def _screen_file_name(screen: str) -> str:

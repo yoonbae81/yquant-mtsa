@@ -10,7 +10,15 @@ from pension.config import PensionConfig
 from pension.device_profile import DeviceProfile
 from pension.login_bridge import LoginCommandResult
 from pension.ocr import OcrResult
-from pension.order_executor import MtsLoginRequiredError, OrderExecutor, OrderRequest, quantity_text_matches
+from pension.order_executor import (
+    MarketRoundTripRequest,
+    MtsLoginRequiredError,
+    OrderExecutionResult,
+    OrderExecutor,
+    OrderRequest,
+    quantity_text_matches,
+)
+from pension.routes import InformationContext, RouteStep
 from pension.run_artifacts import RunArtifacts
 from pension.run_modes import decide_submit_permission
 
@@ -138,6 +146,7 @@ def make_profile():
                     },
                     "regions": {
                         "quantity_input": {"x": 445, "y": 1250, "w": 590, "h": 90},
+                        "filled_results": {"x": 60, "y": 760, "w": 960, "h": 920},
                     },
                 },
                 "search": {
@@ -164,6 +173,23 @@ def make_profile():
                     "regions": {
                         "summary": {"x": 60, "y": 760, "w": 960, "h": 920},
                     },
+                },
+            },
+            "recoveries": {
+                "common_popup": {
+                    "anchors": ["닫기", "오늘 하루"],
+                    "tap_points": {"close": {"x": 101, "y": 202}},
+                    "allowed_actions": ["close", "confirm", "back"],
+                    "max_attempts": 1,
+                },
+                "dangerous_overlay": {
+                    "anchors": ["최종 확인"],
+                    "tap_points": {
+                        "confirm": {"x": 740, "y": 1985},
+                        "submit": {"x": 810, "y": 1985},
+                    },
+                    "allowed_actions": ["submit"],
+                    "max_attempts": 1,
                 },
             },
         }
@@ -293,6 +319,40 @@ class OrderExecutorQuantityTests(unittest.TestCase):
 
         self.assertEqual(device.taps[-2:], [(740, 1985), (270, 1985)])
 
+    def test_manual_submit_leaves_verified_confirmation_open(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(
+                    [
+                        "주문 확인 매수 시장가 수량 종목",
+                        "IRP TIGER 화장품 228790 매수 시장가 수량 1",
+                    ]
+                ),
+                artifacts=RunArtifacts(temp_dir, run_id="manual-submit"),
+            )
+
+            decision = decide_submit_permission("manual-submit", verified=True)
+            executor._tap_profile_point("order.submit")
+            confirmation = executor._verify_confirmation_popup(
+                OrderRequest(
+                    account="IRP",
+                    side="매수",
+                    symbol_code="228790",
+                    symbol_name="TIGER 화장품",
+                    quantity=1,
+                )
+            )
+            if confirmation["passed"] and decision.should_cancel_confirmation:
+                executor._tap_profile_point("order_confirm.cancel")
+
+        self.assertTrue(confirmation["passed"])
+        self.assertEqual(device.taps, [(740, 1985)])
+
     def test_inspects_current_order_context_before_planning(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             executor = OrderExecutor(
@@ -309,6 +369,191 @@ class OrderExecutorQuantityTests(unittest.TestCase):
         self.assertEqual(context.current_screen, "주문")
         self.assertEqual(context.account, "IRP")
         self.assertEqual(context.tab, "매수")
+
+    def test_confirm_recovery_uses_recovery_coordinates(self):
+        device = FakeDevice()
+        profile = make_profile()
+        profile.data["recoveries"]["dangerous_overlay"]["tap_points"]["confirm"] = {"x": 333, "y": 444}
+        profile.data["recoveries"]["dangerous_overlay"]["allowed_actions"] = ["confirm"]
+
+        from pension.recovery import RecoveryHandler
+        handler = RecoveryHandler(device, profile)
+        ocr_result = OcrResult(image_path="screen.png", language="kor+eng", text="최종 확인", words=[])
+        result = handler.handle(ocr_result)
+
+        self.assertTrue(result.handled)
+        self.assertEqual(result.action, "confirm")
+        self.assertEqual(device.taps, [(333, 444)])
+
+    def test_route_step_recovers_popup_then_tap_proceeds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr("이벤트 안내 닫기"),
+                artifacts=RunArtifacts(temp_dir, run_id="route-step-recovery"),
+            )
+            step = RouteStep(name="수량 입력", action="탭", profile_key="order.quantity_input")
+
+            recovery = executor._recover_before_route_step(step, label="order-route-quantity-input")
+            executor._execute_route_step(step)
+            recovery_files = list((Path(temp_dir) / "route-step-recovery").glob("*order-route-quantity-input-recovery.json"))
+
+        self.assertTrue(recovery["handled"])
+        self.assertEqual(recovery["action"], "close")
+        self.assertEqual(device.taps, [(101, 202), (740, 1295)])
+        self.assertTrue(recovery_files)
+
+    def test_open_order_route_recovers_popup_before_route_tap_then_proceeds(self):
+        class FakeRegistry:
+            def plan(self, route_name, account=None, context=None):
+                return [RouteStep(name="수량 입력", action="탭", profile_key="order.quantity_input")]
+
+            def context_after(self, route_name, account=None, context=None):
+                return InformationContext(current_screen="주문", account=account, tab=route_name)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(["MY 국내 해외 상품/연금 혜택 홈", "이벤트 안내 닫기"]),
+                artifacts=RunArtifacts(temp_dir, run_id="open-route-recovery"),
+            )
+            old_registry = order_executor_module.InformationRouteRegistry
+            order_executor_module.InformationRouteRegistry = FakeRegistry
+            try:
+                context = executor._open_order_route("매수", "IRP")
+            finally:
+                order_executor_module.InformationRouteRegistry = old_registry
+            recovery_files = list((Path(temp_dir) / "open-route-recovery").glob("*order-route-수량 입력-recovery.json"))
+
+        self.assertEqual(context.current_screen, "주문")
+        self.assertEqual(device.taps, [(101, 202), (740, 1295)])
+        self.assertTrue(recovery_files)
+
+    def test_read_filled_results_recovers_popup_before_route_tap_then_reads(self):
+        class FakeRegistry:
+            def plan(self, route_name, account=None, context=None):
+                return [
+                    RouteStep(name="체결 탭", action="탭", profile_key="order.quantity_input"),
+                    RouteStep(name="체결결과 읽기", action="읽기", profile_key="order.filled_results"),
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(["이벤트 안내 닫기", "체결결과 IRP 매수 체결수량 1"]),
+                artifacts=RunArtifacts(temp_dir, run_id="filled-route-recovery"),
+            )
+            old_registry = order_executor_module.InformationRouteRegistry
+            order_executor_module.InformationRouteRegistry = FakeRegistry
+            try:
+                text = executor.read_filled_results(InformationContext(current_screen="주문", account="IRP"))
+            finally:
+                order_executor_module.InformationRouteRegistry = old_registry
+            recovery_files = list((Path(temp_dir) / "filled-route-recovery").glob("*filled-results-route-체결 탭-recovery.json"))
+
+        self.assertIn("체결결과", text)
+        self.assertEqual(device.taps, [(101, 202), (740, 1295)])
+        self.assertTrue(recovery_files)
+
+    def test_route_recovery_detected_unhandled_raises_and_no_tap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr("최종 확인"),
+                artifacts=RunArtifacts(temp_dir, run_id="route-unsafe-submit"),
+            )
+
+            class FakeRegistryUnsafe:
+                def plan(self, route_name, account=None, context=None):
+                    return [RouteStep(name="수량 입력", action="탭", profile_key="order.quantity_input")]
+
+                def context_after(self, route_name, account=None, context=None):
+                    return InformationContext(current_screen="주문", account=account, tab=route_name)
+
+            old_registry = order_executor_module.InformationRouteRegistry
+            order_executor_module.InformationRouteRegistry = FakeRegistryUnsafe
+            try:
+                with self.assertRaisesRegex(RuntimeError, "recovery detected but not handled"):
+                    executor._open_order_route("매수", "IRP")
+            finally:
+                order_executor_module.InformationRouteRegistry = old_registry
+            # No taps should have occurred due to fail-closed behavior
+            self.assertEqual(device.taps, [])
+
+    def test_route_step_no_recovery_proceeds_normally(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr("일반 상태"),
+                artifacts=RunArtifacts(temp_dir, run_id="route-no-recovery"),
+            )
+            step = RouteStep(name="수량 입력", action="탭", profile_key="order.quantity_input")
+
+            recovery = executor._recover_before_route_step(step, label="order-route-quantity-input-no-recovery")
+            # No recovery detected; should proceed without exception
+            self.assertFalse(recovery["detected"])
+            executor._execute_route_step(step)
+
+        self.assertEqual(device.taps, [(740, 1295)])
+
+    def test_order_verification_does_not_recover_popup_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr("이벤트 안내 닫기"),
+                artifacts=RunArtifacts(temp_dir, run_id="verify-no-recovery"),
+            )
+
+            result = executor._verify_current_order(
+                OrderRequest(account="IRP", side="매수", symbol_name="TIGER 미국S&P500", quantity=3),
+                label="order-before-submit",
+            )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(device.taps, [])
+
+    def test_confirmation_verification_does_not_recover_popup_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(["이벤트 안내 닫기", "이벤트 안내 닫기"]),
+                artifacts=RunArtifacts(temp_dir, run_id="confirm-no-recovery"),
+            )
+
+            result = executor._verify_confirmation_popup(
+                OrderRequest(account="IRP", side="매수", symbol_name="TIGER 미국S&P500", quantity=3)
+            )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(device.taps, [])
 
     def test_rejects_order_execution_when_login_activity_is_foreground(self):
         executor = OrderExecutor(
@@ -363,6 +608,66 @@ class OrderExecutorQuantityTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RuntimeError, "expected 주문 screen"):
                 executor._require_current_screen("주문", label="order-route-complete")
+
+    def test_screen_requirement_recovers_known_overlay_then_revalidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(
+                    [
+                        "이벤트 안내 닫기",
+                        "이벤트 안내 닫기",
+                        "개인형IRP 비밀번호 매수 주문금액 원",
+                    ]
+                ),
+                artifacts=RunArtifacts(temp_dir, run_id="screen-recovery-ok"),
+            )
+
+            executor._require_current_screen("주문", label="order-route-complete")
+            recovery_files = list((Path(temp_dir) / "screen-recovery-ok").glob("*order-route-complete-recovery.json"))
+
+        self.assertEqual(device.taps, [(101, 202)])
+        self.assertTrue(recovery_files)
+
+    def test_screen_requirement_fails_unknown_overlay(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(["알 수 없는 안내", "알 수 없는 안내"]),
+                artifacts=RunArtifacts(temp_dir, run_id="screen-recovery-unknown"),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "expected 주문 screen"):
+                executor._require_current_screen("주문", label="order-route-complete")
+
+        self.assertEqual(device.taps, [])
+
+    def test_screen_recovery_never_taps_order_or_final_submit_points(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            device = FakeDevice()
+            executor = OrderExecutor(
+                device,
+                make_profile(),
+                PensionConfig({}),
+                capture=FakeCapture(),
+                ocr=FakeOcr(["최종 확인", "최종 확인"]),
+                artifacts=RunArtifacts(temp_dir, run_id="screen-recovery-dangerous"),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "expected 주문 screen"):
+                executor._require_current_screen("주문", label="order-route-complete")
+
+        self.assertNotIn((740, 1985), device.taps)
+        self.assertNotIn((810, 1985), device.taps)
+        self.assertEqual(device.taps, [])
 
     def test_screen_requirement_rejects_login_activity_before_screencap(self):
         device = FakeDevice(
@@ -469,6 +774,95 @@ class OrderExecutorQuantityTests(unittest.TestCase):
             device.started,
             ["com.truefriend.neosmartarenewal/com.truefriend.neosmartarenewal.ui.main.MTSMainActivity"],
         )
+
+    def test_filled_results_verification_requires_symbol_side_and_quantity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = OrderExecutor(
+                FakeDevice(),
+                make_profile(),
+                PensionConfig({}),
+                artifacts=RunArtifacts(temp_dir, run_id="filled-results"),
+            )
+
+            result = executor._verify_filled_results_text(
+                OrderRequest(
+                    account="IRP",
+                    side="매수",
+                    symbol_code="228790",
+                    symbol_name="TIGER 화장품",
+                    quantity=1,
+                ),
+                "체결결과 IRP 228790 TIGER 화장품 매수 시장가 체결수량 1",
+            )
+
+        self.assertTrue(result["passed"])
+
+    def test_market_roundtrip_blocks_sell_when_real_buy_filled_result_is_unverified(self):
+        executor = OrderExecutor(FakeDevice(), make_profile(), PensionConfig({}))
+        calls = []
+
+        def fake_execute(request):
+            calls.append(request.side)
+            return OrderExecutionResult(
+                request=request,
+                verified=True,
+                submitted=True,
+                confirmation_verified=True,
+                filled_results_read=True,
+                filled_results_verified=False,
+                decision={"may_open_confirmation": True, "may_tap_final_submit": True},
+                verification={"passed": True},
+                confirmation_verification={"passed": True},
+                filled_results_verification={"passed": False},
+                filled_results_text="체결결과 없음",
+                artifacts_dir="runs/test",
+            )
+
+        executor.execute = fake_execute
+        result = executor.execute_market_round_trip(
+            MarketRoundTripRequest(
+                account="IRP",
+                mode="real-run",
+                explicit_real_run=True,
+                acknowledge_live_trade=True,
+            )
+        )
+
+        self.assertFalse(result.completed)
+        self.assertEqual(result.blocked_reason, "buy_filled_results_not_verified")
+        self.assertEqual(calls, ["매수"])
+
+    def test_market_roundtrip_real_run_requires_acknowledgement(self):
+        executor = OrderExecutor(FakeDevice(), make_profile(), PensionConfig({}))
+
+        with self.assertRaisesRegex(ValueError, "acknowledge_live_trade"):
+            executor.execute_market_round_trip(
+                MarketRoundTripRequest(account="IRP", mode="real-run", explicit_real_run=True)
+            )
+
+    def test_market_roundtrip_real_run_rejects_non_default_symbol_or_quantity(self):
+        executor = OrderExecutor(FakeDevice(), make_profile(), PensionConfig({}))
+
+        with self.assertRaisesRegex(ValueError, "228790"):
+            executor.execute_market_round_trip(
+                MarketRoundTripRequest(
+                    account="IRP",
+                    symbol_code="360750",
+                    mode="real-run",
+                    explicit_real_run=True,
+                    acknowledge_live_trade=True,
+                )
+            )
+        with self.assertRaisesRegex(ValueError, "quantity must be 1"):
+            executor.execute_market_round_trip(
+                MarketRoundTripRequest(
+                    account="IRP",
+                    quantity=2,
+                    mode="real-run",
+                    explicit_real_run=True,
+                    acknowledge_live_trade=True,
+                )
+            )
 
 
 if __name__ == "__main__":

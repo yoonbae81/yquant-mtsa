@@ -14,7 +14,7 @@ from .keypad import RandomNumericKeypadMapper
 from .holdings_grid import BalanceHoldingsGridParser, HoldingRow, load_ocr_json, merge_holding_rows
 from .holdings_service import HoldingsTickerResolver
 from .ocr import TesseractOcr
-from .order_executor import OrderExecutor, OrderRequest, normalize_order_side
+from .order_executor import MarketRoundTripRequest, OrderExecutor, OrderRequest, normalize_order_side
 from .recovery import RecoveryDetector
 from .routes import InformationContext, InformationRouteRegistry, RouteStep
 from .run_artifacts import RunArtifacts
@@ -167,7 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_order.add_argument("--amount", type=int, default=None)
 
     submit_policy = subparsers.add_parser("submit-policy", help="evaluate whether submit may be tapped")
-    submit_policy.add_argument("mode", choices=["inspect", "dry-run", "confirm-run", "real-run"])
+    submit_policy.add_argument("mode", choices=["inspect", "dry-run", "confirm-run", "manual-submit", "real-run"])
     submit_policy.add_argument("--verified", action="store_true")
     submit_policy.add_argument("--explicit-real-run", action="store_true")
 
@@ -196,10 +196,23 @@ def build_parser() -> argparse.ArgumentParser:
     order.add_argument("--symbol-name", default=None)
     order.add_argument("--quantity", type=int, required=True)
     order.add_argument("--expected-amount", type=int, default=None)
-    order.add_argument("--mode", choices=["inspect", "dry-run", "confirm-run", "real-run"], default="dry-run")
+    order.add_argument("--mode", choices=["inspect", "dry-run", "confirm-run", "manual-submit", "real-run"], default="dry-run")
     order.add_argument("--explicit-real-run", action="store_true")
     order.add_argument("--no-read-filled-results", action="store_true")
     order.add_argument("--psm", type=int, default=6)
+
+    round_trip = subparsers.add_parser(
+        "market-roundtrip",
+        help="run a guarded 1-share market buy/sell scenario for a single ETF/REIT",
+    )
+    round_trip.add_argument("--account", choices=["IRP", "DC", "irp", "dc"], required=True)
+    round_trip.add_argument("--symbol-code", default="228790")
+    round_trip.add_argument("--symbol-name", default="TIGER 화장품")
+    round_trip.add_argument("--quantity", type=int, default=1)
+    round_trip.add_argument("--mode", choices=["inspect", "dry-run", "confirm-run", "manual-submit", "real-run"], default="confirm-run")
+    round_trip.add_argument("--explicit-real-run", action="store_true")
+    round_trip.add_argument("--acknowledge-live-trade", action="store_true")
+    round_trip.add_argument("--psm", type=int, default=6)
 
     filled_results = subparsers.add_parser("order-filled-results", help="read the order filled-results tab")
     filled_results.add_argument("--account", choices=["IRP", "DC", "irp", "dc"], default=None)
@@ -218,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("validate-profile", help="validate a profile directory or JSON file")
     subparsers.add_parser("validate", help="validate a profile directory or JSON file")
 
-    init_profile = subparsers.add_parser("init-profile", help="create a minimal profile from device info")
+    init_profile = subparsers.add_parser("init-profile", help="create a profile from current templates and device info")
     init_profile.add_argument("output", help="output profile path")
 
     set_point = subparsers.add_parser("set-point", help="write a tap point to a profile")
@@ -829,6 +842,27 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
         confirmation_required = bool(result.decision.get("may_open_confirmation"))
         return 0 if result.verified and (not confirmation_required or result.confirmation_verified) else 2
+
+    if args.command == "market-roundtrip":
+        if profile is None:
+            raise SystemExit("--profile is required for market-roundtrip")
+        config_path = Path(args.config)
+        if not config_path.exists():
+            raise SystemExit(f"{args.config} is required for market-roundtrip")
+        result = OrderExecutor(device, profile, PensionConfig.load(config_path)).execute_market_round_trip(
+            MarketRoundTripRequest(
+                account=args.account.upper(),
+                symbol_code=args.symbol_code,
+                symbol_name=args.symbol_name,
+                quantity=args.quantity,
+                mode=args.mode,
+                explicit_real_run=args.explicit_real_run,
+                acknowledge_live_trade=args.acknowledge_live_trade,
+                psm=args.psm,
+            )
+        )
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return 0 if result.completed else 2
 
     if args.command == "order-filled-results":
         if profile is None:

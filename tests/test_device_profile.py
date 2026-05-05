@@ -31,7 +31,7 @@ class DeviceProfileTests(unittest.TestCase):
         self.assertEqual((region.x, region.y, region.w, region.h), (40, 490, 1000, 130))
         self.assertEqual(profile.anchors("order"), ["비밀번호"])
 
-    def test_can_create_and_save_minimal_profile(self):
+    def test_can_create_and_save_profile_from_device_info(self):
         profile = DeviceProfile.from_device_info(serial="abc", width=1080, height=2400, density=420)
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -42,6 +42,44 @@ class DeviceProfileTests(unittest.TestCase):
             self.assertIsNone(loaded.serial)
             self.assertEqual(loaded.width, 1080)
             self.assertEqual(loaded.height, 2400)
+
+    def test_init_profile_saves_current_directory_shape(self):
+        profile = DeviceProfile.from_device_info(serial="abc", width=1080, height=2340, density=440)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "1080x2340"
+            profile.save(root)
+            files = sorted(path.name for path in root.glob("*.json"))
+            loaded = DeviceProfile.load(root)
+
+        self.assertEqual(
+            files,
+            [
+                "account-password-popup.json",
+                "account-select-sheet.json",
+                "balance-account-sheet.json",
+                "balance-holding-detail.json",
+                "balance.json",
+                "home.json",
+                "manifest.json",
+                "menu.json",
+                "order-confirm.json",
+                "order-search.json",
+                "order.json",
+                "recovery.json",
+                "search.json",
+                "secure-number-keypad.json",
+            ],
+        )
+        self.assertFalse(loaded.validate())
+        self.assertIsNone(loaded.serial)
+        self.assertIn("home", loaded.data["screens"])
+        self.assertIn("menu", loaded.data["screens"])
+        self.assertIn("balance", loaded.data["screens"])
+        self.assertIn("order", loaded.data["screens"])
+        self.assertIn("account_password_popup", loaded.data["screens"])
+        self.assertIn("secure_number_keypad", loaded.data["screens"])
+        self.assertIn("common_popup", loaded.data["recoveries"])
 
     def test_can_set_points_and_regions_with_ratios(self):
         profile = DeviceProfile.from_device_info(serial="abc", width=1080, height=2400, density=420)

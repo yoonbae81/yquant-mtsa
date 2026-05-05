@@ -2,10 +2,12 @@ import unittest
 
 from pension.screen_values import (
     ExpectedBalance,
+    ExpectedFilledResult,
     ExpectedOrder,
     normalize_account,
     parse_number,
     verify_balance_text,
+    verify_filled_result_text,
     verify_order_text,
 )
 
@@ -57,6 +59,21 @@ class ScreenValuesTests(unittest.TestCase):
                 symbol_name="TIGER 미국S&P500",
                 side="매수",
                 quantity=7,
+                price_type="시장가",
+            ),
+        )
+
+        self.assertTrue(result.passed)
+
+    def test_verify_filled_result_text_matches_trade_fields(self):
+        result = verify_filled_result_text(
+            "체결결과 IRP 228790 TIGER 화장품 매도 시장가 체결수량 1",
+            ExpectedFilledResult(
+                account_type="IRP",
+                symbol_code="228790",
+                symbol_name="TIGER 화장품",
+                side="매도",
+                quantity=1,
                 price_type="시장가",
             ),
         )

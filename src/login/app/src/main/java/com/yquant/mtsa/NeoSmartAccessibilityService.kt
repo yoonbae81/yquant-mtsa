@@ -466,16 +466,27 @@ class NeoSmartAccessibilityService : AccessibilityService() {
                 return false
             }
 
-            mtsRoot = waitForMtsWindow(timeoutMs = 12000)
+            mtsRoot = waitForMtsWindow(timeoutMs = 4000)
+        }
+
+        sendLoginStatus("공동인증서 로그인 화면으로 직접 이동하는 중입니다...")
+        try {
+            openDeepLinkScreen(LOGIN_SCREEN_NO)
+            if (waitForRoot(timeoutMs = 8000) { isCertLoginRoot(it) } != null) {
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "${LOGIN_SCREEN_NO} 공동인증서 로그인 화면 직접 이동 실패", e)
+        }
+
+        if (mtsRoot == null) {
+            mtsRoot = waitForMtsWindow(timeoutMs = 8000)
             if (mtsRoot == null) {
                 return false
             }
-
-            sendLoginStatus("한국투자 앱 마스터 데이터를 받는 중입니다. 10초 후 계속합니다...")
-            sleep(10_000)
         }
 
-        return waitForCertificateLoginScreen(timeoutMs = 20000)
+        return waitForCertificateLoginScreen(timeoutMs = 12000)
     }
 
     private fun navigateToRetirementOrderScreenAsync() {
@@ -1531,7 +1542,7 @@ class NeoSmartAccessibilityService : AccessibilityService() {
         candidates.forEach { query ->
             val node = findFirstActionableNodeByTextOrDescription(root, query)
             if (node != null && clickNode(node)) {
-                sleep(1000)
+                sleep(250)
                 return true
             }
         }

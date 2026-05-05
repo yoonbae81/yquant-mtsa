@@ -12,12 +12,13 @@ from .device_profile import DeviceProfile
 from .events import AccountPasswordPopupHandler
 from .login_bridge import LoginBridge, LoginCommandResult
 from .ocr import TesseractOcr
+from .recovery import RecoveryHandler
 from .routes import InformationContext, InformationRouteRegistry, RouteStep
 from .run_artifacts import RunArtifacts
 from .run_modes import decide_submit_permission
 from .screen_capture import ScreenCapture
 from .screen_state import ScreenStateChecker
-from .screen_values import ExpectedOrder, verify_order_text
+from .screen_values import ExpectedFilledResult, ExpectedOrder, verify_filled_result_text, verify_order_text
 
 
 class MtsLoginRequiredError(RuntimeError):
@@ -26,6 +27,9 @@ class MtsLoginRequiredError(RuntimeError):
 
 MTS_PACKAGE = "com.truefriend.neosmartarenewal"
 MTS_MAIN_COMPONENT = "com.truefriend.neosmartarenewal/com.truefriend.neosmartarenewal.ui.main.MTSMainActivity"
+ROUND_TRIP_SYMBOL_CODE = "228790"
+ROUND_TRIP_SYMBOL_NAME = "TIGER 화장품"
+ROUND_TRIP_QUANTITY = 1
 
 
 @dataclass(frozen=True)
@@ -60,9 +64,11 @@ class OrderExecutionResult:
     submitted: bool
     confirmation_verified: bool
     filled_results_read: bool
+    filled_results_verified: bool
     decision: dict
     verification: dict
     confirmation_verification: dict | None
+    filled_results_verification: dict | None
     filled_results_text: str | None
     artifacts_dir: str
 
@@ -82,9 +88,11 @@ class OrderExecutionResult:
             "submitted": self.submitted,
             "confirmation_verified": self.confirmation_verified,
             "filled_results_read": self.filled_results_read,
+            "filled_results_verified": self.filled_results_verified,
             "decision": self.decision,
             "verification": self.verification,
             "confirmation_verification": self.confirmation_verification,
+            "filled_results_verification": self.filled_results_verification,
             "filled_results_text": self.filled_results_text,
             "artifacts_dir": self.artifacts_dir,
         }
@@ -110,6 +118,43 @@ class QuantityInputResult:
         }
 
 
+@dataclass(frozen=True)
+class MarketRoundTripRequest:
+    account: str
+    symbol_code: str = ROUND_TRIP_SYMBOL_CODE
+    symbol_name: str = ROUND_TRIP_SYMBOL_NAME
+    quantity: int = ROUND_TRIP_QUANTITY
+    mode: str = "confirm-run"
+    explicit_real_run: bool = False
+    acknowledge_live_trade: bool = False
+    psm: int = 6
+
+
+@dataclass(frozen=True)
+class MarketRoundTripResult:
+    request: MarketRoundTripRequest
+    buy: OrderExecutionResult
+    sell: OrderExecutionResult | None
+    completed: bool
+    blocked_reason: str | None
+
+    def to_dict(self) -> dict:
+        return {
+            "request": {
+                "account": self.request.account,
+                "symbol_code": self.request.symbol_code,
+                "symbol_name": self.request.symbol_name,
+                "quantity": self.request.quantity,
+                "mode": self.request.mode,
+                "acknowledge_live_trade": self.request.acknowledge_live_trade,
+            },
+            "completed": self.completed,
+            "blocked_reason": self.blocked_reason,
+            "buy": self.buy.to_dict(),
+            "sell": self.sell.to_dict() if self.sell else None,
+        }
+
+
 class OrderExecutor:
     def __init__(
         self,
@@ -127,6 +172,7 @@ class OrderExecutor:
         self.capture = capture or ScreenCapture(device)
         self.ocr = ocr or TesseractOcr()
         self.artifacts = artifacts or RunArtifacts()
+        self.recovery_handler = RecoveryHandler(self.device, self.profile)
 
     def execute(self, request: OrderRequest) -> OrderExecutionResult:
         if request.quantity <= 0:
@@ -151,7 +197,9 @@ class OrderExecutor:
         confirmation_verification: dict | None = None
         confirmation_verified = False
         filled_results_text: str | None = None
+        filled_results_verification: dict | None = None
         filled_results_read = False
+        filled_results_verified = False
 
         if decision.may_open_confirmation:
             self._tap_profile_point("order.submit")
@@ -166,8 +214,10 @@ class OrderExecutor:
                     submitted=False,
                     confirmation_verified=False,
                     confirmation_verification=confirmation_verification,
+                    filled_results_verification=None,
                     filled_results_text=None,
                     filled_results_read=False,
+                    filled_results_verified=False,
                 )
             if decision.may_tap_final_submit:
                 self._tap_profile_point("order_confirm.submit")
@@ -176,7 +226,9 @@ class OrderExecutor:
                 if request.read_filled_results:
                     filled_results_text = self.read_filled_results(context)
                     filled_results_read = True
-            else:
+                    filled_results_verification = self._verify_filled_results_text(request, filled_results_text)
+                    filled_results_verified = filled_results_verification["passed"]
+            elif decision.should_cancel_confirmation:
                 self._tap_profile_point("order_confirm.cancel")
 
         return self._result(
@@ -186,9 +238,75 @@ class OrderExecutor:
             submitted=submitted,
             confirmation_verified=confirmation_verified,
             confirmation_verification=confirmation_verification,
+            filled_results_verification=filled_results_verification,
             filled_results_text=filled_results_text,
             filled_results_read=filled_results_read,
+            filled_results_verified=filled_results_verified,
         )
+
+    def execute_market_round_trip(self, request: MarketRoundTripRequest) -> MarketRoundTripResult:
+        if request.quantity <= 0:
+            raise ValueError("quantity must be positive")
+        self._validate_market_round_trip_safety(request)
+        buy = self.execute(
+            OrderRequest(
+                account=request.account,
+                side="매수",
+                quantity=request.quantity,
+                symbol_code=request.symbol_code,
+                symbol_name=request.symbol_name,
+                mode=request.mode,
+                explicit_real_run=request.explicit_real_run,
+                read_filled_results=True,
+                psm=request.psm,
+            )
+        )
+        if request.mode == "real-run" and not buy.submitted:
+            return MarketRoundTripResult(request, buy=buy, sell=None, completed=False, blocked_reason="buy_not_submitted")
+        if request.mode == "real-run" and not buy.filled_results_verified:
+            return MarketRoundTripResult(
+                request,
+                buy=buy,
+                sell=None,
+                completed=False,
+                blocked_reason="buy_filled_results_not_verified",
+            )
+        sell = self.execute(
+            OrderRequest(
+                account=request.account,
+                side="매도",
+                quantity=request.quantity,
+                symbol_code=request.symbol_code,
+                symbol_name=request.symbol_name,
+                mode=request.mode,
+                explicit_real_run=request.explicit_real_run,
+                read_filled_results=True,
+                psm=request.psm,
+            )
+        )
+        if request.mode == "real-run" and not sell.submitted:
+            return MarketRoundTripResult(request, buy=buy, sell=sell, completed=False, blocked_reason="sell_not_submitted")
+        if request.mode == "real-run" and not sell.filled_results_verified:
+            return MarketRoundTripResult(
+                request,
+                buy=buy,
+                sell=sell,
+                completed=False,
+                blocked_reason="sell_filled_results_not_verified",
+            )
+        return MarketRoundTripResult(request, buy=buy, sell=sell, completed=True, blocked_reason=None)
+
+    def _validate_market_round_trip_safety(self, request: MarketRoundTripRequest) -> None:
+        if request.mode != "real-run":
+            return
+        if request.symbol_code != ROUND_TRIP_SYMBOL_CODE:
+            raise ValueError(f"real-run market roundtrip is limited to {ROUND_TRIP_SYMBOL_CODE}")
+        if request.symbol_name != ROUND_TRIP_SYMBOL_NAME:
+            raise ValueError(f"real-run market roundtrip is limited to {ROUND_TRIP_SYMBOL_NAME}")
+        if request.quantity != ROUND_TRIP_QUANTITY:
+            raise ValueError(f"real-run market roundtrip quantity must be {ROUND_TRIP_QUANTITY}")
+        if not request.acknowledge_live_trade:
+            raise ValueError("real-run market roundtrip requires acknowledge_live_trade")
 
     def _open_order_route_with_login_recovery(self, route_name: str, account: str) -> InformationContext:
         attempted_login_recovery = False
@@ -292,6 +410,13 @@ class OrderExecutor:
         for step in steps:
             if step.action == "읽기":
                 continue
+            recovery = self._recover_before_route_step(step, label=f"filled-results-route-{step.name}")
+            if recovery.get("detected") and not recovery.get("handled"):
+                reason = recovery.get("reason") or "unknown-recovery-failure"
+                candidate = recovery.get("candidate")
+                raise RuntimeError(
+                    f"recovery detected but not handled: candidate={candidate}, reason={reason}"
+                )
             self._execute_route_step(step)
             self._delay_for_step(step)
         image = self.artifacts.next_path("filled-results-source", ext="png")
@@ -321,6 +446,14 @@ class OrderExecutor:
                 if result.detected and not result.handled:
                     raise RuntimeError(f"account password event failed: {result.reason}")
                 continue
+            recovery = self._recover_before_route_step(step, label=f"order-route-{step.name}")
+            # If a recovery candidate is detected but not handled, fail fast (fail-closed)
+            if recovery.get("detected") and not recovery.get("handled"):
+                reason = recovery.get("reason") or "unknown-recovery-failure"
+                candidate = recovery.get("candidate")
+                raise RuntimeError(
+                    f"recovery detected but not handled: candidate={candidate}, reason={reason}"
+                )
             self._execute_route_step(step)
             self._delay_for_step(step)
         return registry.context_after(route_name, account=account, context=context)
@@ -329,8 +462,46 @@ class OrderExecutor:
         self._ensure_not_login_activity()
         payload = self._inspect_current_state_payload(label=label)
         current_screen = payload.get("current_screen") if payload else None
-        if current_screen != expected_screen:
+        if current_screen == expected_screen:
+            return
+
+        recovery_result = self._attempt_screen_recovery(label=label)
+        self.artifacts.write_json(f"{label}-recovery", recovery_result)
+        if not recovery_result["handled"]:
             raise RuntimeError(f"expected {expected_screen} screen, got {current_screen or 'UNKNOWN'}")
+
+        payload = self._inspect_current_state_payload(label=f"{label}-after-recovery")
+        recovered_screen = payload.get("current_screen") if payload else None
+        if recovered_screen != expected_screen:
+            raise RuntimeError(f"expected {expected_screen} screen after recovery, got {recovered_screen or 'UNKNOWN'}")
+
+    def _attempt_screen_recovery(self, *, label: str) -> dict:
+        return self._attempt_recovery(label=label, write_active_result=False)
+
+    def _recover_before_route_step(self, step: RouteStep, *, label: str) -> dict:
+        if not self._is_recoverable_route_step(step):
+            return {
+                "detected": False,
+                "handled": False,
+                "candidate": None,
+                "action": None,
+                "attempts": 0,
+                "reason": "not_recoverable_route_step",
+            }
+        return self._attempt_recovery(label=label)
+
+    @staticmethod
+    def _is_recoverable_route_step(step: RouteStep) -> bool:
+        return not step.skipped and step.profile_key is not None and step.action in {"탭", "스와이프"}
+
+    def _attempt_recovery(self, *, label: str, write_active_result: bool = True) -> dict:
+        image = self.artifacts.next_path(f"{label}-recovery-source", ext="png")
+        self.capture.capture(image)
+        ocr_result = self.ocr.recognize(image, psm=6)
+        result = self.recovery_handler.handle(ocr_result).to_dict()
+        if write_active_result and (result["detected"] or result["handled"]):
+            self.artifacts.write_json(f"{label}-recovery", result)
+        return result
 
     def _ensure_not_login_activity(self) -> None:
         if self._is_login_activity_active():
@@ -497,6 +668,21 @@ class OrderExecutor:
         decision_json.write_text(json.dumps(verification, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         return verification
 
+    def _verify_filled_results_text(self, request: OrderRequest, text: str) -> dict:
+        verification = verify_filled_result_text(
+            text,
+            ExpectedFilledResult(
+                account_type=request.account,
+                symbol_code=request.symbol_code,
+                symbol_name=request.symbol_name,
+                side=request.route_name,
+                quantity=request.quantity,
+                price_type="시장가",
+            ),
+        ).to_dict()
+        self.artifacts.write_json(f"{request.route_name}-filled-results-verification", verification)
+        return verification
+
     def _execute_route_step(self, step: RouteStep) -> None:
         if step.skipped or step.profile_key is None or step.action in {"화면확인", "계좌확인", "탭확인", "펼침확인"}:
             return
@@ -527,18 +713,22 @@ class OrderExecutor:
         submitted: bool,
         confirmation_verified: bool,
         confirmation_verification: dict | None,
+        filled_results_verification: dict | None,
         filled_results_text: str | None,
         filled_results_read: bool,
+        filled_results_verified: bool,
     ) -> OrderExecutionResult:
         result = OrderExecutionResult(
             request=request,
             verified=bool(verification["passed"]),
             submitted=submitted,
             confirmation_verified=confirmation_verified,
+            filled_results_verified=filled_results_verified,
             filled_results_read=filled_results_read,
             decision=decision,
             verification=verification,
             confirmation_verification=confirmation_verification,
+            filled_results_verification=filled_results_verification,
             filled_results_text=filled_results_text,
             artifacts_dir=str(self.artifacts.root),
         )
