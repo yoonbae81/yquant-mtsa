@@ -51,9 +51,9 @@
    - `login-command LOGIN` 호출
    - 로그인 후 MTS shell 또는 목표 화면 검증
    - helper 실패 사유를 redacted run artifact로 기록
-10. `run order --dry-run` 구현
+10. `scripts/run order --mode dry-run` 구현
 11. 장시간 dry-run으로 recovery fixture 축적
-12. `confirm-run`, `real-run` 순서로 제한적으로 개방
+12. `confirm-run`, `manual-submit`, `real-run` 순서로 제한적으로 개방
 
 ## 3. 안전 기준
 
@@ -61,6 +61,7 @@
 
 - config에서 실주문 허용
 - CLI에서 명시적 `real-run` 선택
+- CLI에서 `--acknowledge-live-trade` 지정
 - 계좌/종목/방향/수량/금액 검증 통과
 - 주문 확인 팝업의 요약 재검증 통과
 - 최종 주문 직전 산출물 기록 완료

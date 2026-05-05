@@ -8,7 +8,7 @@
 
 `scripts/profile`은 캘리브레이션과 profile 관리용입니다. 공유 profile은 `src/pension/profiles/<width>x<height>/` 디렉터리에 저장합니다.
 
-`scripts/run`은 운영 시나리오용 진입점입니다. 좌표를 직접 받지 않고 profile key를 참조해 로그인, 잔고/주문 화면 진입, IRP/DC 계좌 선택, OCR 검증을 실행합니다.
+`scripts/run`은 운영 시나리오용 진입점입니다. 좌표를 직접 받지 않고 profile key를 참조해 로그인, 잔고/주문 화면 진입, IRP/DC 계좌 선택, 보유종목 조회, OCR 검증, dry-run/confirm-run/manual-submit/real-run 주문 흐름을 실행합니다.
 
 `scripts/mtsa`는 기존 명령 호환용 wrapper입니다. 새 문서와 개발 작업은 `scripts/debug`, `scripts/profile`, `scripts/run`을 기준으로 합니다.
 
@@ -49,6 +49,12 @@ default_profile: "src/pension/profiles/1080x2340"
 ./scripts/run validate-scenario open-order
 ./scripts/run open-order
 ./scripts/run select-account DC
+./scripts/run holdings --account IRP --max-pages 8
 ./scripts/run verify-balance --text "IRP 1234 TIGER 미국S&P500 10주 평가금액 100000" --account-type IRP --account-hint 1234 --symbol-name "TIGER 미국S&P500" --min-quantity 10
 ./scripts/run verify-order --text "DC 9999 KODEX 미국나스닥100 매수 수량 3 금액 45000" --account-type DC --account-hint 9999 --symbol-name "KODEX 미국나스닥100" --side 매수 --quantity 3 --amount 45000
+./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml order --account IRP --side buy --symbol-code 360750 --quantity 1 --mode dry-run
+./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml market-roundtrip --account IRP --mode confirm-run
+./scripts/run --profile src/pension/profiles/1080x2340 order-filled-results --account IRP
 ```
+
+단건 주문의 `real-run`은 `config.yaml`의 `allow_real_run: true`, `--explicit-real-run`, `--acknowledge-live-trade`가 모두 있어야 최종 제출을 허용합니다. `confirm-run`은 확인 팝업 검증 후 자동 취소하고, `manual-submit`은 검증된 확인 팝업을 열어둡니다.

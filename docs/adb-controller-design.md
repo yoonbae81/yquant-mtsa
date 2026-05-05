@@ -109,7 +109,7 @@ ADB Device Layer는 기기 조작의 원시 기능만 책임진다. 이 레이�
 
 ```python
 device.capture("before_password_popup")
-device.tap_point("retirement_order.account_password")
+device.tap_point("order.account_password")
 device.input_text("10")
 device.press_back()
 ```
@@ -133,8 +133,11 @@ adb -s SERIAL shell input keyevent BACK
 src/pension/profiles/
   1080x2340/
     manifest.json
-    retirement-order.json
-    account-password.json
+    order.json
+    order-search.json
+    order-confirm.json
+    balance.json
+    account-password-popup.json
     keypads.json
     recovery.json
 ```
@@ -161,9 +164,9 @@ src/pension/profiles/
 
 ```json
 {
-  "screen": "retirement_order",
+  "screen": "order",
   "anchors": {
-    "required": ["퇴직연금"],
+    "required": ["매수", "비밀번호"],
     "optional": ["비밀번호", "매수", "매도", "주문가능", "호가"],
     "forbidden": ["오류", "로그인"],
     "min_score": 0.7
@@ -318,11 +321,12 @@ Recovery Handler는 주문 버튼이나 최종 확인 버튼을 누르지 않는
 
 - `inspect`: 현재 화면 캡처, OCR, 상태 판단만 수행
 - `calibrate`: tap point와 read region 설정
-- `dry-run`: 실제 주문 직전까지 진행하고 중단
-- `confirm-run`: 최종 주문 직전 사용자 확인을 요구
-- `real-run`: 명시적으로 허용된 경우에만 최종 주문까지 진행
+- `dry-run`: 주문 확인 팝업을 열기 전 중단
+- `confirm-run`: 주문 확인 팝업을 열고 요약을 재검증한 뒤 자동으로 취소
+- `manual-submit`: 주문 확인 팝업을 열고 재검증한 뒤 사용자에게 최종 제출을 맡김
+- `real-run`: 설정 허용, 명시적 CLI 옵션, live-trade acknowledgement가 모두 있을 때만 최종 주문까지 진행
 
-기본값은 `inspect` 또는 `dry-run`이어야 한다. `real-run`은 설정 파일, CLI 옵션, 실행 전 확인 로그가 모두 충족될 때만 허용한다.
+기본값은 `inspect` 또는 `dry-run`이어야 한다. 단건 주문의 `real-run`은 `allow_real_run: true`, `--explicit-real-run`, `--acknowledge-live-trade`, 주문 본문 검증, 주문 확인 팝업 재검증이 모두 충족될 때만 허용한다.
 
 ## 실험 산출물과 Replay
 
@@ -334,8 +338,8 @@ Recovery Handler는 주문 버튼이나 최종 확인 버튼을 누르지 않는
 runs/20260503-143012/
   run.json
   run.log
-  001-before-retirement-order.png
-  001-before-retirement-order.ocr.json
+  001-before-order.png
+  001-before-order.ocr.json
   001-decision.json
   002-after-password-tap.png
   002-after-password-tap.ocr.json
@@ -371,15 +375,13 @@ mtsa replay runs/20260503-143012
 
 ```bash
 make setup
-mtsa device-info
-mtsa capture current --name retirement-order
-mtsa ocr latest
-mtsa calibrate retirement-order
-mtsa check retirement-order
-mtsa tap retirement_order.account_password
-mtsa recover
-mtsa run order --dry-run
-mtsa replay runs/20260503-143012
+./scripts/debug device-info
+./scripts/debug capture screenshots/20260503-143012-current.png
+./scripts/debug ocr screenshots/20260503-143012-current.png
+./scripts/profile --profile src/pension/profiles/1080x2340 check order --image screenshots/20260503-143012-current.png
+./scripts/profile --profile src/pension/profiles/1080x2340 set-point order.account_password 900 548
+./scripts/run --profile src/pension/profiles/1080x2340 --config config.yaml order --account IRP --side buy --symbol-code 360750 --quantity 1 --mode dry-run
+./scripts/run --profile src/pension/profiles/1080x2340 order-filled-results --account IRP
 ```
 
 CLI가 안정화되면 Android 앱 또는 데스크톱 GUI는 이 CLI/엔진 위에 얹는다.
@@ -396,17 +398,18 @@ src/pension/
   state_machine.py
   recovery.py
   run_artifacts.py
-  scenarios/
-    retirement_order.py
   profiles/
     1080x2340/
       manifest.json
-      retirement-order.json
-      account-password.json
+      order.json
+      order-search.json
+      order-confirm.json
+      balance.json
+      account-password-popup.json
       keypads.json
       recovery.json
   fixtures/
-    retirement_order/
+    order/
 
 runs/
   20260503-143012/

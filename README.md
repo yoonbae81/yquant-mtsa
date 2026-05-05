@@ -78,9 +78,10 @@
    - [x] 주문 버튼 탭 전 최종 주문 정보 검증
    - [x] 주문 버튼 탭 후 확인 팝업 감지
    - [x] 주문 확인 팝업에서 계좌, 종목, 매수/매도, 수량, 금액 재검증
-   - [x] `inspect`, `dry-run`, `confirm-run`, `real-run` 실행 모드 제공
+   - [x] `inspect`, `dry-run`, `confirm-run`, `manual-submit`, `real-run` 실행 모드 제공
    - [x] `dry-run`에서는 최종 주문 직전 중단
-   - [x] `confirm-run`에서는 사용자 승인 후 진행 여부 결정
+   - [x] `confirm-run`에서는 주문 확인 팝업을 검증한 뒤 자동 취소
+   - [x] `manual-submit`에서는 검증된 주문 확인 팝업을 열어두고 사용자가 최종 제출 여부 결정
    - [x] `real-run`에서는 설정 허용, 명시적 real-run 옵션, live-trade acknowledgement를 모두 만족할 때만 최종 주문 버튼 탭
    - [x] before/after screenshot, crop, OCR JSON, decision JSON 저장
    - [x] 저장된 주문 화면 산출물을 이용한 replay 테스트 구현
